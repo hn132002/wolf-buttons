@@ -22,3 +22,16 @@ model CommunicationCard {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
+
+model CommunicationCategory {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  emoji     String?
+  sortOrder Int      @default(0)
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+}
