@@ -117,6 +117,10 @@ type CategoryVisibilityParseResult =
   | { ok: true; isVisible: boolean }
   | { ok: false; error: string; status: number };
 
+type CategoryOrderParseResult =
+  | { ok: true; categoryIds: string[] }
+  | { ok: false; error: string; status: number };
+
 const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
 const hasOwn = (body: Record<string, unknown>, key: string) =>
@@ -248,6 +252,57 @@ export const parseCategoryVisibilityInput = (
   }
 
   return { ok: true, isVisible: source.isVisible };
+};
+
+export const parseCategoryOrderInput = (
+  body: unknown
+): CategoryOrderParseResult => {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "資料格式不正確", status: 400 };
+  }
+
+  const source = body as Record<string, unknown>;
+
+  if (!hasOwn(source, "categoryIds")) {
+    return { ok: false, error: "categoryIds 必填", status: 400 };
+  }
+
+  if (!Array.isArray(source.categoryIds)) {
+    return { ok: false, error: "categoryIds 必須是陣列", status: 400 };
+  }
+
+  if (
+    source.categoryIds.some(
+      (categoryId) => typeof categoryId !== "string" || categoryId.trim() === ""
+    )
+  ) {
+    return { ok: false, error: "categoryIds 必須都是非空字串", status: 400 };
+  }
+
+  const categoryIds = source.categoryIds.map((categoryId) => categoryId.trim());
+
+  if (new Set(categoryIds).size !== categoryIds.length) {
+    return { ok: false, error: "categoryIds 不可重複", status: 400 };
+  }
+
+  return { ok: true, categoryIds };
+};
+
+export const validateCategoryOrderIds = (
+  categoryIds: string[],
+  currentCategoryIds: string[]
+): CategoryOrderParseResult => {
+  const current = new Set(currentCategoryIds);
+
+  if (categoryIds.length !== currentCategoryIds.length) {
+    return { ok: false, error: "categoryIds 必須包含全部分類", status: 400 };
+  }
+
+  if (categoryIds.some((categoryId) => !current.has(categoryId))) {
+    return { ok: false, error: "categoryIds 包含未知分類", status: 400 };
+  }
+
+  return { ok: true, categoryIds };
 };
 
 export const sortCards = <

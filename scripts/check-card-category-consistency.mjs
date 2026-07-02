@@ -35,7 +35,7 @@ export const checkCardCategoryConsistency = (projection, database, categoryApiPr
     .map((category) => category.key);
   const unknownCardCategories = missing;
   const emptyDatabaseCategories = extra;
-  const orderMismatch = projection
+  const legacyOrderMismatch = projection
     .filter((category) => databaseByKey.get(category.key)?.sortOrder !== category.sortOrder)
     .map((category) => ({
       key: category.key,
@@ -49,7 +49,6 @@ export const checkCardCategoryConsistency = (projection, database, categoryApiPr
       missing.length === 0 &&
       extra.length === 0 &&
       unknownCardCategories.length === 0 &&
-      orderMismatch.length === 0 &&
       duplicateKeys.length === 0 &&
       duplicateSortOrders.length === 0 &&
       sortOrderContinuous &&
@@ -60,7 +59,7 @@ export const checkCardCategoryConsistency = (projection, database, categoryApiPr
     extra,
     unknownCardCategories,
     emptyDatabaseCategories,
-    orderMismatch,
+    legacyOrderMismatch,
     duplicateKeys,
     duplicateSortOrders,
     sortOrderContinuous,

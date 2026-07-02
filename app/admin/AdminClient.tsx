@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent,
+} from "react";
 import {
   DELETE_ALL_CONFIRMATION,
   exportCardsToTsv,
@@ -407,10 +415,168 @@ function CategoryManager({
   onReloadCards: () => Promise<void>;
   isBusy: boolean;
 }) {
+  const ORDER_PENDING_ID = "__category-order__";
+  const [orderedCategories, setOrderedCategories] = useState(categories);
   const [pendingId, setPendingId] = useState("");
   const [message, setMessage] = useState("");
-  const visibleCount = categories.filter((category) => category.isVisible).length;
+  const [draggingId, setDraggingId] = useState("");
+  const dragRef = useRef<{
+    id: string;
+    pointerId: number;
+    dragging: boolean;
+    previous: AdminCardCategoryProjection[];
+    timer: number | null;
+  } | null>(null);
+  const visibleCount = orderedCategories.filter((category) => category.isVisible).length;
   const disabled = isBusy || pendingId.length > 0;
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setOrderedCategories(categories);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [categories]);
+
+  const sameOrder = (
+    a: AdminCardCategoryProjection[],
+    b: AdminCardCategoryProjection[]
+  ) => a.length === b.length && a.every((category, index) => category.id === b[index]?.id);
+
+  const moveCategory = (
+    list: AdminCardCategoryProjection[],
+    fromId: string,
+    toId: string
+  ) => {
+    const fromIndex = list.findIndex((category) => category.id === fromId);
+    const toIndex = list.findIndex((category) => category.id === toId);
+
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return list;
+
+    const next = [...list];
+    const [category] = next.splice(fromIndex, 1);
+
+    next.splice(toIndex, 0, category);
+    return next;
+  };
+
+  const saveOrder = async (
+    nextCategories: AdminCardCategoryProjection[],
+    previousCategories: AdminCardCategoryProjection[]
+  ) => {
+    if (sameOrder(nextCategories, previousCategories)) return;
+
+    setPendingId(ORDER_PENDING_ID);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/card-categories/order", {
+        method: "PATCH",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          categoryIds: nextCategories.map((category) => category.id),
+        }),
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const data = (await response.json()) as AdminCardCategoriesResponse;
+      setOrderedCategories(Array.isArray(data.categories) ? data.categories : nextCategories);
+      await onReloadCards();
+      setMessage("分類順序已儲存");
+    } catch (error) {
+      setOrderedCategories(previousCategories);
+      setMessage(error instanceof Error ? error.message : "分類順序儲存失敗");
+    } finally {
+      setPendingId("");
+    }
+  };
+
+  const moveByButton = (index: number, offset: -1 | 1) => {
+    if (disabled) return;
+
+    const toIndex = index + offset;
+    if (toIndex < 0 || toIndex >= orderedCategories.length) return;
+
+    const previous = orderedCategories;
+    const next = [...orderedCategories];
+    const [category] = next.splice(index, 1);
+
+    next.splice(toIndex, 0, category);
+    setOrderedCategories(next);
+    void saveOrder(next, previous);
+  };
+
+  const startDragging = () => {
+    if (!dragRef.current) return;
+
+    dragRef.current.dragging = true;
+    setDraggingId(dragRef.current.id);
+  };
+
+  const dragHandlePointerDown = (
+    event: PointerEvent<HTMLButtonElement>,
+    category: AdminCardCategoryProjection
+  ) => {
+    if (disabled) return;
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
+    const timer =
+      isTouch
+        ? window.setTimeout(startDragging, 220)
+        : null;
+
+    dragRef.current = {
+      id: category.id,
+      pointerId: event.pointerId,
+      dragging: false,
+      previous: orderedCategories,
+      timer,
+    };
+
+    if (!isTouch) startDragging();
+  };
+
+  const dragHandlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.dragging) return;
+
+    event.preventDefault();
+
+    if (event.clientY < 80) window.scrollBy({ top: -16 });
+    if (event.clientY > window.innerHeight - 80) window.scrollBy({ top: 16 });
+
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-category-row-id]");
+    const targetId = target?.dataset.categoryRowId;
+
+    if (!targetId || targetId === drag.id) return;
+
+    setOrderedCategories((current) => moveCategory(current, drag.id, targetId));
+  };
+
+  const dragHandlePointerEnd = (event: PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (drag.timer) window.clearTimeout(drag.timer);
+    dragRef.current = null;
+    setDraggingId("");
+
+    if (!drag.dragging) return;
+
+    event.preventDefault();
+    setOrderedCategories((current) => {
+      void saveOrder(current, drag.previous);
+      return current;
+    });
+  };
 
   const toggleCategory = async (category: AdminCardCategoryProjection) => {
     const isVisible = !category.isVisible;
@@ -442,28 +608,45 @@ function CategoryManager({
         <div>
           <h2 className="text-xl font-extrabold">分類管理</h2>
           <p className="text-sm font-bold text-[var(--ink-soft)]">
-            顯示 {visibleCount} 個，隱藏 {categories.length - visibleCount} 個
+            顯示 {visibleCount} 個，隱藏 {orderedCategories.length - visibleCount} 個
           </p>
         </div>
       </div>
 
-      {categories.length === 0 || visibleCount === 0 ? (
+      {orderedCategories.length === 0 || visibleCount === 0 ? (
         <p className="rounded-md border border-[var(--line-main)] bg-[var(--panel-soft)] p-3 text-sm font-bold text-[var(--ink-soft)]">
           目前所有分類皆已隱藏
         </p>
       ) : null}
 
-      {categories.length > 0 && (
+      {orderedCategories.length > 0 && (
         <div className="grid gap-2">
-          {categories.map((category) => {
+          {orderedCategories.map((category, index) => {
             const isPending = pendingId === category.id;
+            const isDragging = draggingId === category.id;
 
             return (
               <div
                 key={category.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-3"
+                data-category-row-id={category.id}
+                className={`flex items-center justify-between gap-2 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-3 ${
+                  isDragging ? "opacity-50 outline outline-2 outline-[var(--accent)]" : ""
+                }`}
               >
-                <div className="min-w-0">
+                <button
+                  type="button"
+                  aria-label={`拖曳排序 ${category.name}`}
+                  disabled={disabled}
+                  onPointerDown={(event) => dragHandlePointerDown(event, category)}
+                  onPointerMove={dragHandlePointerMove}
+                  onPointerUp={dragHandlePointerEnd}
+                  onPointerCancel={dragHandlePointerEnd}
+                  className="shrink-0 touch-none rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-2 py-2 text-base font-black disabled:opacity-50"
+                >
+                  ☰
+                </button>
+
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-lg leading-none" aria-hidden="true">
                       {category.emoji || "·"}
@@ -480,15 +663,37 @@ function CategoryManager({
                   </p>
                 </div>
 
-                <label className="inline-flex shrink-0 items-center gap-2 rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-sm font-extrabold">
-                  <input
-                    type="checkbox"
-                    checked={category.isVisible}
-                    disabled={disabled}
-                    onChange={() => void toggleCategory(category)}
-                  />
-                  {isPending ? "更新中" : category.isVisible ? "顯示" : "隱藏"}
-                </label>
+                <div className="grid shrink-0 gap-1">
+                  <label className="inline-flex items-center gap-2 rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-sm font-extrabold">
+                    <input
+                      type="checkbox"
+                      checked={category.isVisible}
+                      disabled={disabled}
+                      onChange={() => void toggleCategory(category)}
+                    />
+                    {isPending ? "更新中" : category.isVisible ? "顯示" : "隱藏"}
+                  </label>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      aria-label={`上移 ${category.name}`}
+                      disabled={disabled || index === 0}
+                      onClick={() => moveByButton(index, -1)}
+                      className="rounded-md border border-[var(--line-main)] bg-[var(--button-bg)] px-2 py-1 text-xs font-extrabold disabled:opacity-40"
+                    >
+                      上移
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`下移 ${category.name}`}
+                      disabled={disabled || index === orderedCategories.length - 1}
+                      onClick={() => moveByButton(index, 1)}
+                      className="rounded-md border border-[var(--line-main)] bg-[var(--button-bg)] px-2 py-1 text-xs font-extrabold disabled:opacity-40"
+                    >
+                      下移
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })}
