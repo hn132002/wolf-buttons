@@ -45,6 +45,8 @@ const adminHeaders = (secret: string, json = false): HeadersInit => ({
   ...(json ? { "Content-Type": "application/json" } : {}),
 });
 
+const ADMIN_SECRET_SESSION_KEY = "wolfButtons.adminSecret";
+
 const parseCategoryText = (value: string) => {
   return Array.from(new Set(value.split("|").map((category) => category.trim()).filter(Boolean)));
 };
@@ -541,10 +543,13 @@ export default function AdminClient() {
       setCards(sortCards(Array.isArray(data.cards) ? data.cards : []));
       setSecret(nextSecret);
       setIsAuthed(true);
-      window.sessionStorage.setItem("wolf-buttons.adminSecret", nextSecret);
+      setPasswordInput("");
+      window.sessionStorage.setItem(ADMIN_SECRET_SESSION_KEY, nextSecret);
     } catch (error) {
       setIsAuthed(false);
-      window.sessionStorage.removeItem("wolf-buttons.adminSecret");
+      setSecret("");
+      setCards([]);
+      window.sessionStorage.removeItem(ADMIN_SECRET_SESSION_KEY);
       setMessage(error instanceof Error ? error.message : "登入失敗");
     } finally {
       setIsLoading(false);
@@ -552,7 +557,7 @@ export default function AdminClient() {
   }, []);
 
   useEffect(() => {
-    const saved = window.sessionStorage.getItem("wolf-buttons.adminSecret");
+    const saved = window.sessionStorage.getItem(ADMIN_SECRET_SESSION_KEY);
 
     if (!saved) return;
 
@@ -610,10 +615,7 @@ export default function AdminClient() {
           }}
         >
           <div>
-            <p className="text-4xl leading-none" aria-hidden="true">
-              🐺
-            </p>
-            <h1 className="mt-2 text-2xl font-extrabold">狼狼按鈕</h1>
+            <h1 className="text-2xl font-extrabold">狼狼按鈕管理</h1>
           </div>
           <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]">
             管理密碼
@@ -629,7 +631,7 @@ export default function AdminClient() {
             disabled={isLoading || !passwordInput.trim()}
             className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-extrabold text-white disabled:opacity-50"
           >
-            進入管理
+            進入管理模式
           </button>
           {message && <p className="text-sm font-bold text-[var(--danger)]">{message}</p>}
         </form>
@@ -658,13 +660,15 @@ export default function AdminClient() {
             <button
               type="button"
               onClick={() => {
-                window.sessionStorage.removeItem("wolf-buttons.adminSecret");
+                window.sessionStorage.removeItem(ADMIN_SECRET_SESSION_KEY);
                 setIsAuthed(false);
                 setSecret("");
+                setPasswordInput("");
+                setCards([]);
               }}
               className="rounded-md border border-[var(--line-main)] bg-[var(--control-bg)] px-4 py-2 text-sm font-extrabold text-[var(--ink-main)]"
             >
-              登出
+              離開管理模式
             </button>
           </div>
         </header>
