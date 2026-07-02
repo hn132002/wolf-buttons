@@ -1,13 +1,16 @@
 import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
+import { projectStoredCardCategories } from "../lib/cards.ts";
 import { readProjectedCategories } from "./backfill-card-categories.mjs";
 
-export const checkCardCategoryConsistency = (projection, database) => {
+export const checkCardCategoryConsistency = (projection, database, categoryApiProjection = database) => {
   const projectionByKey = new Map(projection.map((category) => [category.key, category]));
   const databaseByKey = new Map(database.map((category) => [category.key, category]));
+  const keyCounts = new Map();
   const sortOrderCounts = new Map();
 
   for (const category of database) {
+    keyCounts.set(category.key, (keyCounts.get(category.key) ?? 0) + 1);
     sortOrderCounts.set(
       category.sortOrder,
       (sortOrderCounts.get(category.sortOrder) ?? 0) + 1
@@ -17,6 +20,9 @@ export const checkCardCategoryConsistency = (projection, database) => {
   const duplicateSortOrders = Array.from(sortOrderCounts)
     .filter(([, count]) => count > 1)
     .map(([sortOrder]) => sortOrder);
+  const duplicateKeys = Array.from(keyCounts)
+    .filter(([, count]) => count > 1)
+    .map(([key]) => key);
   const sortedOrders = database
     .map((category) => category.sortOrder)
     .sort((a, b) => a - b);
@@ -27,6 +33,8 @@ export const checkCardCategoryConsistency = (projection, database) => {
   const extra = database
     .filter((category) => !projectionByKey.has(category.key))
     .map((category) => category.key);
+  const unknownCardCategories = missing;
+  const emptyDatabaseCategories = extra;
   const orderMismatch = projection
     .filter((category) => databaseByKey.get(category.key)?.sortOrder !== category.sortOrder)
     .map((category) => ({
@@ -34,36 +42,29 @@ export const checkCardCategoryConsistency = (projection, database) => {
       projection: category.sortOrder,
       database: databaseByKey.get(category.key)?.sortOrder ?? null,
     }));
-  const hidden = database
-    .filter((category) => category.isVisible !== true)
-    .map((category) => category.key);
-  const emojiNotNull = database
-    .filter((category) => category.emoji !== null)
-    .map((category) => category.key);
-  const nameMismatch = database
-    .filter((category) => category.name !== category.key)
-    .map((category) => category.key);
+  const categoryApiCount = categoryApiProjection.length;
 
   return {
     ok:
       missing.length === 0 &&
       extra.length === 0 &&
+      unknownCardCategories.length === 0 &&
       orderMismatch.length === 0 &&
+      duplicateKeys.length === 0 &&
       duplicateSortOrders.length === 0 &&
       sortOrderContinuous &&
-      hidden.length === 0 &&
-      emojiNotNull.length === 0 &&
-      nameMismatch.length === 0,
+      categoryApiCount === database.length,
     projection: projection.length,
     database: database.length,
     missing,
     extra,
+    unknownCardCategories,
+    emptyDatabaseCategories,
     orderMismatch,
+    duplicateKeys,
     duplicateSortOrders,
     sortOrderContinuous,
-    hidden,
-    emojiNotNull,
-    nameMismatch,
+    categoryApiProjection: categoryApiCount,
   };
 };
 
@@ -72,13 +73,22 @@ export const readDatabaseCategories = (prisma) =>
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   });
 
+export const readVisibleCardCategories = (prisma) =>
+  prisma.communicationCard.findMany({
+    where: { isVisible: true },
+    select: { categories: true, isVisible: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+  });
+
 const run = async () => {
   const prisma = new PrismaClient();
 
   try {
+    const database = await readDatabaseCategories(prisma);
     const result = checkCardCategoryConsistency(
       await readProjectedCategories(prisma),
-      await readDatabaseCategories(prisma)
+      database,
+      projectStoredCardCategories(database, await readVisibleCardCategories(prisma))
     );
 
     console.log(JSON.stringify(result, null, 2));

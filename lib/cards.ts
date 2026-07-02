@@ -23,9 +23,18 @@ export type CardCategoryProjection = {
   key: string;
   name: string;
   sortOrder: number;
-  isVisible: true;
+  isVisible: boolean;
   cardCount: number;
   pageCount: number;
+};
+
+type StoredCardCategory = {
+  id: string;
+  key: string;
+  name: string;
+  sortOrder: number;
+  isVisible: boolean;
+  createdAt: Date | string;
 };
 
 export type CardWriteData = {
@@ -146,6 +155,44 @@ export const getCardCategories = (
 export const projectCardCategories = (
   cards: Pick<CommunicationCard, "categories" | "isVisible">[]
 ) => collectCardCategories(cards.filter((card) => card.isVisible));
+
+const compareStoredCategories = (a: StoredCardCategory, b: StoredCardCategory) => {
+  const createdA = a.createdAt instanceof Date ? a.createdAt.toISOString() : a.createdAt;
+  const createdB = b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt;
+
+  return a.sortOrder - b.sortOrder || createdA.localeCompare(createdB) || a.id.localeCompare(b.id);
+};
+
+export const projectStoredCardCategories = (
+  categories: StoredCardCategory[],
+  cards: Pick<CommunicationCard, "categories" | "isVisible">[]
+): CardCategoryProjection[] => {
+  const categoryKeys = new Set(categories.map((category) => category.key));
+  const counts = new Map<string, number>();
+
+  for (const card of cards) {
+    if (!card.isVisible || !Array.isArray(card.categories)) continue;
+
+    for (const category of new Set(card.categories)) {
+      if (typeof category !== "string" || !categoryKeys.has(category)) continue;
+
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+  }
+
+  return [...categories].sort(compareStoredCategories).map((category) => {
+    const cardCount = counts.get(category.key) ?? 0;
+
+    return {
+      key: category.key,
+      name: category.name,
+      sortOrder: category.sortOrder,
+      isVisible: category.isVisible,
+      cardCount,
+      pageCount: Math.ceil(cardCount / 9),
+    };
+  });
+};
 
 export const sortCards = <
   T extends Pick<CommunicationCard, "id" | "sortOrder" | "createdAt">,
