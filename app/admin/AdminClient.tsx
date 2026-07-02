@@ -30,8 +30,6 @@ type CardFormState = {
   isVisible: boolean;
 };
 
-const ADMIN_SECRET_SESSION_KEY = "wolfButtons.adminSecret";
-
 const emptyForm = (): CardFormState => ({
   categories: "常用",
   emoji: "",
@@ -45,10 +43,7 @@ const emptyForm = (): CardFormState => ({
   isVisible: true,
 });
 
-const adminHeaders = (secret: string, json = false): HeadersInit => ({
-  "x-admin-secret": secret,
-  ...(json ? { "Content-Type": "application/json" } : {}),
-});
+const jsonHeaders: HeadersInit = { "Content-Type": "application/json" };
 
 const cardToForm = (card: CommunicationCard): CardFormState => ({
   categories: card.categories.join("|"),
@@ -230,13 +225,11 @@ function CardFields({
 
 function BatchManager({
   cards,
-  adminSecret,
   onReloadCards,
   isBusy,
   onBusyChange,
 }: {
   cards: CommunicationCard[];
-  adminSecret: string;
   onReloadCards: () => Promise<void>;
   isBusy: boolean;
   onBusyChange: (busy: boolean) => void;
@@ -297,7 +290,7 @@ function BatchManager({
     try {
       const response = await fetch("/api/cards/batch", {
         method: "POST",
-        headers: adminHeaders(adminSecret, true),
+        headers: jsonHeaders,
         body: JSON.stringify({ mode: applyMode, cards: preview.rows }),
       });
 
@@ -407,12 +400,10 @@ function BatchManager({
 
 function CategoryManager({
   categories,
-  adminSecret,
   onReloadCards,
   isBusy,
 }: {
   categories: AdminCardCategoryProjection[];
-  adminSecret: string;
   onReloadCards: () => Promise<void>;
   isBusy: boolean;
 }) {
@@ -430,7 +421,7 @@ function CategoryManager({
     try {
       const response = await fetch(`/api/admin/card-categories/${category.id}`, {
         method: "PATCH",
-        headers: adminHeaders(adminSecret, true),
+        headers: jsonHeaders,
         body: JSON.stringify({ isVisible }),
       });
 
@@ -515,13 +506,11 @@ function CategoryManager({
 
 function EditCardDetails({
   card,
-  adminSecret,
   onSaved,
   onDeleted,
   onBusyChange,
 }: {
   card: CommunicationCard;
-  adminSecret: string;
   onSaved: (card: CommunicationCard) => void;
   onDeleted: (id: string) => void;
   onBusyChange: (busy: boolean) => void;
@@ -539,7 +528,7 @@ function EditCardDetails({
     try {
       const response = await fetch(`/api/cards/${card.id}`, {
         method: "PATCH",
-        headers: adminHeaders(adminSecret, true),
+        headers: jsonHeaders,
         body: JSON.stringify(formToPayload(form)),
       });
 
@@ -567,7 +556,6 @@ function EditCardDetails({
     try {
       const response = await fetch(`/api/cards/${card.id}`, {
         method: "DELETE",
-        headers: adminHeaders(adminSecret),
       });
 
       if (!response.ok) throw new Error(await readApiError(response));
@@ -614,7 +602,6 @@ function EditCardDetails({
 }
 
 export default function AdminClient() {
-  const [secret, setSecret] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [cards, setCards] = useState<CommunicationCard[]>([]);
   const [categories, setCategories] = useState<AdminCardCategoryProjection[]>([]);
@@ -623,19 +610,16 @@ export default function AdminClient() {
   const [message, setMessage] = useState("");
   const [newCardForm, setNewCardForm] = useState(emptyForm);
 
-  const loadCards = useCallback(async (nextSecret: string, showLoading = true) => {
+  const loadCards = useCallback(async (showLoading = true, reportError = true) => {
     if (showLoading) setIsLoading(true);
     setMessage("");
 
     try {
-      const headers = adminHeaders(nextSecret);
       const [cardsResponse, categoriesResponse] = await Promise.all([
         fetch("/api/cards?includeHidden=1", {
-          headers,
           cache: "no-store",
         }),
         fetch("/api/admin/card-categories", {
-          headers,
           cache: "no-store",
         }),
       ]);
@@ -647,31 +631,45 @@ export default function AdminClient() {
       const categoriesData = (await categoriesResponse.json()) as AdminCardCategoriesResponse;
       setCards(sortCards(Array.isArray(cardsData.cards) ? cardsData.cards : []));
       setCategories(Array.isArray(categoriesData.categories) ? categoriesData.categories : []);
-      setSecret(nextSecret);
       setIsAuthed(true);
       setPasswordInput("");
-      window.sessionStorage.setItem(ADMIN_SECRET_SESSION_KEY, nextSecret);
     } catch (error) {
       setIsAuthed(false);
-      setSecret("");
       setCards([]);
       setCategories([]);
-      window.sessionStorage.removeItem(ADMIN_SECRET_SESSION_KEY);
-      setMessage(error instanceof Error ? error.message : "登入失敗");
+      if (reportError) setMessage(error instanceof Error ? error.message : "登入失敗");
     } finally {
       if (showLoading) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const saved = window.sessionStorage.getItem(ADMIN_SECRET_SESSION_KEY);
-
-    if (saved) {
-      window.requestAnimationFrame(() => {
-        void loadCards(saved);
-      });
-    }
+    window.requestAnimationFrame(() => {
+      void loadCards(false, false);
+    });
   }, [loadCards]);
+
+  const createSession = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ password: passwordInput }),
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      await loadCards(false);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "登入失敗");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const mergeCard = (nextCard: CommunicationCard) => {
     setCards((current) =>
@@ -691,13 +689,13 @@ export default function AdminClient() {
     try {
       const response = await fetch("/api/cards", {
         method: "POST",
-        headers: adminHeaders(secret, true),
+        headers: jsonHeaders,
         body: JSON.stringify(formToPayload(newCardForm)),
       });
 
       if (!response.ok) throw new Error(await readApiError(response));
 
-      await loadCards(secret, false);
+      await loadCards(false);
       setNewCardForm(emptyForm());
       setMessage("已新增字卡");
     } catch (error) {
@@ -725,14 +723,14 @@ export default function AdminClient() {
     try {
       const response = await fetch("/api/cards", {
         method: "DELETE",
-        headers: adminHeaders(secret, true),
+        headers: jsonHeaders,
         body: JSON.stringify({ confirm: DELETE_ALL_CONFIRMATION }),
       });
 
       if (!response.ok) throw new Error(await readApiError(response));
 
       const result = (await response.json()) as { deleted: number };
-      await loadCards(secret, false);
+      await loadCards(false);
       setMessage(`已刪除 ${result.deleted} 張字卡`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "清空失敗");
@@ -742,9 +740,8 @@ export default function AdminClient() {
   };
 
   const leaveAdmin = () => {
-    window.sessionStorage.removeItem(ADMIN_SECRET_SESSION_KEY);
+    void fetch("/api/admin/session", { method: "DELETE" });
     setIsAuthed(false);
-    setSecret("");
     setPasswordInput("");
     setCards([]);
     setCategories([]);
@@ -755,10 +752,7 @@ export default function AdminClient() {
       <main className="min-h-screen px-4 py-8">
         <form
           className="mx-auto grid max-w-sm gap-4 rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void loadCards(passwordInput);
-          }}
+          onSubmit={createSession}
         >
           <h1 className="text-2xl font-extrabold">狼狼按鈕管理</h1>
           <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]">
@@ -820,16 +814,14 @@ export default function AdminClient() {
 
         <BatchManager
           cards={cards}
-          adminSecret={secret}
-          onReloadCards={() => loadCards(secret, false)}
+          onReloadCards={() => loadCards(false)}
           isBusy={isLoading}
           onBusyChange={setIsLoading}
         />
 
         <CategoryManager
           categories={categories}
-          adminSecret={secret}
-          onReloadCards={() => loadCards(secret, false)}
+          onReloadCards={() => loadCards(false)}
           isBusy={isLoading}
         />
 
@@ -858,14 +850,13 @@ export default function AdminClient() {
                 <EditCardDetails
                   key={card.id}
                   card={card}
-                  adminSecret={secret}
                   onSaved={(card) => {
                     mergeCard(card);
-                    void loadCards(secret, false);
+                    void loadCards(false);
                   }}
                   onDeleted={(id) => {
                     setCards((current) => current.filter((card) => card.id !== id));
-                    void loadCards(secret, false);
+                    void loadCards(false);
                   }}
                   onBusyChange={setIsLoading}
                 />
