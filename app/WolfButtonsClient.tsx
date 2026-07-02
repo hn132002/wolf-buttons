@@ -18,32 +18,6 @@ const getCardButtonLabel = (card: CommunicationCard, uiLanguage: UiLanguage) => 
   return uiLanguage === "ja" ? card.labelJa || card.label : card.label;
 };
 
-function IntroPanel() {
-  return (
-    <div className="mx-auto grid max-w-xl gap-3 text-center">
-      <div className="text-5xl leading-none" aria-hidden="true">
-        🐺
-      </div>
-      <h1 className="text-3xl font-extrabold leading-tight sm:text-4xl">
-        狼狼按鈕
-      </h1>
-      <p className="whitespace-pre-line text-lg font-bold leading-relaxed text-[var(--ink-main)]">
-        {`因為我不會說日文，英文也很不擅長，
-所以做了這個按鈕。`}
-      </p>
-      <p className="whitespace-pre-line text-base font-semibold leading-relaxed text-[var(--ink-soft)]">
-        {`日本語が話せなくて、英語も苦手なので、
-このボタンを作りました。`}
-      </p>
-      <p className="text-base font-semibold leading-relaxed text-[var(--ink-soft)]">
-        I don&apos;t speak Japanese and my English isn&apos;t very good,
-        <br />
-        so I made my own buttons.
-      </p>
-    </div>
-  );
-}
-
 export default function WolfButtonsClient({ initialCards }: Props) {
   const [cards, setCards] = useState(() => sortCards(initialCards));
   const [selectedCardId, setSelectedCardId] = useState("");
@@ -60,7 +34,21 @@ export default function WolfButtonsClient({ initialCards }: Props) {
   const categoryCards = displayedCategory
     ? visibleCards.filter((card) => card.categories.includes(displayedCategory))
     : visibleCards;
-  const selectedCard = visibleCards.find((card) => card.id === selectedCardId) || null;
+  const selectedCard =
+    visibleCards.find((card) => card.id === selectedCardId) ||
+    categoryCards[0] ||
+    visibleCards[0] ||
+    null;
+  const primaryText = selectedCard
+    ? uiLanguage === "ja"
+      ? selectedCard.ja
+      : selectedCard.zh
+    : "";
+  const secondaryText = selectedCard
+    ? uiLanguage === "ja"
+      ? selectedCard.zh
+      : selectedCard.ja
+    : "";
 
   useEffect(() => {
     try {
@@ -107,9 +95,10 @@ export default function WolfButtonsClient({ initialCards }: Props) {
 
   return (
     <main className="h-[100dvh] max-h-[100dvh] w-full min-w-0 max-w-full overflow-hidden px-3 py-3 sm:px-4">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col gap-3">
+      <h1 className="sr-only">狼狼按鈕</h1>
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[430px] flex-col gap-3">
         <section
-          className="parchment-panel max-h-[min(46dvh,24rem)] shrink-0 overflow-y-auto rounded-lg px-4 py-5 sm:px-6"
+          className="parchment-shell max-h-[min(42dvh,22rem)] shrink-0 overflow-y-auto rounded-2xl p-4 sm:p-6"
           aria-live="polite"
         >
           {selectedCard ? (
@@ -117,11 +106,11 @@ export default function WolfButtonsClient({ initialCards }: Props) {
               <div className="text-5xl leading-none sm:text-7xl" aria-hidden="true">
                 {selectedCard.emoji}
               </div>
-              <p className="mt-3 text-2xl font-extrabold leading-snug sm:text-4xl">
-                {selectedCard.zh}
+              <p className="mt-3 text-2xl font-extrabold leading-snug text-[var(--ink-main)] sm:mt-5 sm:text-4xl">
+                {primaryText}
               </p>
-              <p className="mt-2 text-xl font-bold leading-snug sm:mt-4 sm:text-3xl">
-                {selectedCard.ja}
+              <p className="mt-2 text-xl font-bold leading-snug text-[var(--ink-main)] sm:mt-4 sm:text-3xl">
+                {secondaryText}
               </p>
               {selectedCard.en && (
                 <p className="mt-2 text-base font-semibold leading-snug text-[var(--ink-soft)] sm:mt-4 sm:text-lg">
@@ -129,34 +118,26 @@ export default function WolfButtonsClient({ initialCards }: Props) {
                 </p>
               )}
               {selectedCard.note && (
-                <p className="mt-3 rounded-md border border-[var(--line-main)] bg-[var(--control-bg)] px-3 py-2 text-sm font-semibold text-[var(--ink-soft)]">
+                <p className="mt-2 rounded-lg border border-[var(--line-soft)] bg-[var(--control-bg)] px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] sm:mt-4">
                   {selectedCard.note}
                 </p>
               )}
             </div>
           ) : (
-            <IntroPanel />
+            <p className="text-center text-lg font-bold text-[var(--ink-soft)]">
+              目前沒有可顯示的字卡。
+            </p>
           )}
         </section>
 
-        <div className="flex shrink-0 justify-end">
-          <div className="grid grid-cols-2 overflow-hidden rounded-md border border-[var(--line-main)] bg-[var(--control-bg)] text-sm font-extrabold">
-            {(["zh", "ja"] as const).map((language) => (
-              <button
-                key={language}
-                type="button"
-                aria-pressed={uiLanguage === language}
-                onClick={() => setLanguage(language)}
-                className={`px-4 py-2 ${
-                  uiLanguage === language
-                    ? "bg-[var(--accent)] text-white"
-                    : "text-[var(--ink-soft)]"
-                }`}
-              >
-                {language === "zh" ? "中文" : "日本語"}
-              </button>
-            ))}
-          </div>
+        <div className="flex shrink-0 justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setLanguage(uiLanguage === "zh" ? "ja" : "zh")}
+            className="rounded-full border border-[var(--line-main)] bg-[var(--control-bg)] px-3 py-1.5 text-xs font-extrabold text-[var(--ink-soft)]"
+          >
+            {uiLanguage === "zh" ? "日本語" : "中文"}
+          </button>
         </div>
 
         <nav
@@ -173,9 +154,9 @@ export default function WolfButtonsClient({ initialCards }: Props) {
                   type="button"
                   aria-pressed={active}
                   onClick={() => setActiveCategory(category)}
-                  className={`shrink-0 rounded-md border px-4 py-2 text-sm font-extrabold ${
+                  className={`shrink-0 rounded-full border px-4 py-2 text-sm font-extrabold ${
                     active
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                      ? "border-[var(--accent-orange-deep)] bg-[var(--accent-orange-soft)] text-[var(--accent-orange-deep)]"
                       : "border-[var(--line-main)] bg-[var(--control-bg)] text-[var(--ink-soft)]"
                   }`}
                 >
@@ -197,9 +178,9 @@ export default function WolfButtonsClient({ initialCards }: Props) {
                 key={card.id}
                 type="button"
                 onClick={() => setSelectedCardId(card.id)}
-                className={`min-h-[72px] min-w-0 rounded-md border px-2 py-2 text-center font-extrabold shadow-sm ${
+                className={`min-h-[72px] min-w-0 rounded-xl border px-2 py-2 text-center font-extrabold shadow-sm ${
                   selectedCard?.id === card.id
-                    ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                    ? "border-[var(--accent-orange-deep)] bg-[var(--accent-orange-soft)] text-[var(--accent-orange-deep)]"
                     : "border-[var(--line-main)] bg-[var(--control-bg)] text-[var(--ink-main)]"
                 }`}
               >
@@ -214,10 +195,14 @@ export default function WolfButtonsClient({ initialCards }: Props) {
           </section>
 
           {categoryCards.length === 0 && (
-            <p className="rounded-md border border-[var(--line-main)] bg-[var(--control-bg)] p-4 text-center text-sm font-bold text-[var(--ink-soft)]">
-              目前沒有可顯示的字卡。
+            <p className="rounded-xl border border-[var(--line-main)] bg-[var(--control-bg)] p-4 text-center text-sm font-bold text-[var(--ink-soft)]">
+              這個分類目前沒有字卡。
             </p>
           )}
+
+          <p className="text-center text-xs font-bold text-[var(--ink-soft)]">
+            下方字卡可直接點選。
+          </p>
         </div>
       </div>
     </main>
