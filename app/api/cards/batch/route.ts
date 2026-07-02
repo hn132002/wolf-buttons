@@ -64,8 +64,10 @@ export async function POST(request: Request) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      for (const row of preview.creates) {
-        await tx.communicationCard.create({ data: createData(row) });
+      if (preview.creates.length > 0) {
+        await tx.communicationCard.createMany({
+          data: preview.creates.map(createData),
+        });
       }
 
       for (const row of preview.updates) {
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
         shown: preview.shows.length,
         deleted: body.mode === "replace" ? preview.replaceDeletes.length : 0,
       };
-    });
+    }, { timeout: 20_000 });
 
     return NextResponse.json(result);
   } catch (error) {
