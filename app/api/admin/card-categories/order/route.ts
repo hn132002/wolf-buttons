@@ -57,7 +57,6 @@ export async function PATCH(request: Request) {
       return tx.communicationCategory.findMany({ orderBy: categoryOrderBy });
     });
     const cards = await prisma.communicationCard.findMany({
-      where: { isVisible: true },
       select: { categories: true, isVisible: true },
       orderBy: categoryOrderBy,
     });

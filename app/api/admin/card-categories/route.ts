@@ -28,7 +28,6 @@ export async function GET(request: Request) {
       orderBy: categoryOrderBy,
     });
     const cards = await prisma.communicationCard.findMany({
-      where: { isVisible: true },
       select: { categories: true, isVisible: true },
       orderBy: categoryOrderBy,
     });

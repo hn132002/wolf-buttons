@@ -103,9 +103,11 @@ const categoryFormToPayload = (form: CategoryFormState) => ({
 const readApiError = async (response: Response) => {
   const data = (await response.json().catch(() => null)) as {
     error?: unknown;
+    message?: unknown;
     errors?: unknown;
   } | null;
 
+  if (typeof data?.message === "string") return data.message;
   if (Array.isArray(data?.errors)) return data.errors.join("、");
   return typeof data?.error === "string" ? data.error : "操作失敗";
 };
@@ -443,6 +445,7 @@ function CategoryManager({
   const [newCategoryForm, setNewCategoryForm] = useState(emptyCategoryForm);
   const [editingId, setEditingId] = useState("");
   const [editCategoryForm, setEditCategoryForm] = useState(emptyCategoryForm);
+  const [deleteTarget, setDeleteTarget] = useState<AdminCardCategoryProjection | null>(null);
   const [pendingId, setPendingId] = useState("");
   const [message, setMessage] = useState("");
   const [draggingId, setDraggingId] = useState("");
@@ -554,6 +557,7 @@ function CategoryManager({
       await onReloadCards();
       setNewCategoryForm(emptyCategoryForm());
       setIsAddingCategory(false);
+      setDeleteTarget(null);
       setMessage("已新增分類");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "新增分類失敗");
@@ -566,6 +570,7 @@ function CategoryManager({
     if (disabled) return;
 
     setIsAddingCategory(false);
+    setDeleteTarget(null);
     setEditingId(category.id);
     setEditCategoryForm(categoryToForm(category));
     setMessage("");
@@ -597,6 +602,39 @@ function CategoryManager({
       setMessage("分類已更新");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "更新分類失敗");
+    } finally {
+      setPendingId("");
+    }
+  };
+
+  const deleteCategory = async () => {
+    if (!deleteTarget) return;
+
+    setPendingId(deleteTarget.id);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/admin/card-categories/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const data = (await response.json()) as AdminCardCategoriesResponse & {
+        deletedCategory: Pick<AdminCardCategoryProjection, "id" | "key" | "name" | "emoji">;
+      };
+
+      setOrderedCategories((current) =>
+        Array.isArray(data.categories)
+          ? data.categories
+          : current.filter((category) => category.id !== deleteTarget.id)
+      );
+      await onReloadCards();
+      setDeleteTarget(null);
+      setEditingId("");
+      setMessage("分類已刪除");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "刪除分類失敗");
     } finally {
       setPendingId("");
     }
@@ -712,6 +750,7 @@ function CategoryManager({
           onClick={() => {
             setIsAddingCategory(true);
             setEditingId("");
+            setDeleteTarget(null);
             setMessage("");
           }}
           className="secondary-button disabled:opacity-50"
@@ -785,6 +824,7 @@ function CategoryManager({
           {orderedCategories.map((category, index) => {
             const isPending = pendingId === category.id;
             const isDragging = draggingId === category.id;
+            const canDelete = category.cardCount === 0;
 
             return (
               <div
@@ -832,6 +872,31 @@ function CategoryManager({
                   >
                     編輯
                   </button>
+                  <details className="relative">
+                    <summary className="cursor-pointer list-none rounded-md border border-[var(--line-main)] bg-[var(--button-bg)] px-3 py-2 text-center text-sm font-extrabold">
+                      更多
+                    </summary>
+                    <div className="mt-1 grid gap-1 rounded-md border border-[var(--line-main)] bg-[var(--panel-main)] p-2">
+                      <button
+                        type="button"
+                        disabled={disabled || !canDelete}
+                        onClick={() => {
+                          setIsAddingCategory(false);
+                          setEditingId("");
+                          setDeleteTarget(category);
+                          setMessage("");
+                        }}
+                        className="danger-button text-sm disabled:opacity-40"
+                      >
+                        刪除分類
+                      </button>
+                      {!canDelete && (
+                        <p className="text-xs font-bold text-[var(--ink-soft)]">
+                          仍有 {category.cardCount} 張字卡，無法刪除
+                        </p>
+                      )}
+                    </div>
+                  </details>
                   <label className="inline-flex items-center gap-2 rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-sm font-extrabold">
                     <input
                       type="checkbox"
@@ -922,6 +987,39 @@ function CategoryManager({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="grid gap-3 rounded-md border border-[var(--danger)] bg-[var(--panel-soft)] p-3"
+        >
+          <h3 className="text-lg font-extrabold">
+            刪除「{formatCardCategoryName(deleteTarget)}」？
+          </h3>
+          <p className="text-sm font-bold text-[var(--ink-soft)]">
+            此分類目前沒有字卡。刪除後無法復原。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setDeleteTarget(null)}
+              className="secondary-button disabled:opacity-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => void deleteCategory()}
+              className="danger-button disabled:opacity-50"
+            >
+              {pendingId === deleteTarget.id ? "刪除中" : "刪除分類"}
+            </button>
+          </div>
         </div>
       )}
 

@@ -232,8 +232,9 @@ export const projectAdminCardCategories = (
   cards: Pick<CommunicationCard, "categories" | "isVisible">[]
 ): AdminCardCategoryProjection[] => {
   const byKey = new Map(categories.map((category) => [category.key, category]));
+  const allCards = cards.map((card) => ({ ...card, isVisible: true }));
 
-  return projectStoredCardCategories(categories, cards).map((category) => {
+  return projectStoredCardCategories(categories, allCards).map((category) => {
     const stored = byKey.get(category.key)!;
 
     return {
@@ -246,6 +247,16 @@ export const projectAdminCardCategories = (
 export const formatCardCategoryName = (
   category: Pick<CardCategoryProjection, "name" | "emoji">
 ) => (category.emoji ? `${category.emoji} ${category.name}` : category.name);
+
+export const countCardsByCategoryKey = (
+  cards: Pick<CommunicationCard, "categories">[],
+  key: string
+) =>
+  cards.reduce(
+    (count, card) =>
+      Array.isArray(card.categories) && card.categories.includes(key) ? count + 1 : count,
+    0
+  );
 
 const parseCategoryNameValue = (
   value: unknown
