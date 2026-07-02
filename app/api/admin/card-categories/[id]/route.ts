@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { parseCategoryVisibilityInput } from "@/lib/cards";
+import { parseCategoryUpdateInput, projectAdminCardCategories } from "@/lib/cards";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -19,33 +19,49 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (denied) return denied;
 
-    const parsed = parseCategoryVisibilityInput(await request.json().catch(() => null));
+    const parsed = parseCategoryUpdateInput(await request.json().catch(() => null));
 
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
 
     const { id } = await context.params;
-    const category = await prisma.communicationCategory.update({
+    const existing = await prisma.communicationCategory.findUnique({
       where: { id },
-      data: { isVisible: parsed.isVisible },
-      select: {
-        id: true,
-        key: true,
-        name: true,
-        emoji: true,
-        sortOrder: true,
-        isVisible: true,
-      },
+      select: { id: true },
     });
 
-    return NextResponse.json({ category });
+    if (!existing) {
+      return NextResponse.json({ error: "找不到分類" }, { status: 404 });
+    }
+
+    if (parsed.data.name) {
+      const duplicate = await prisma.communicationCategory.findFirst({
+        where: { name: parsed.data.name, NOT: { id } },
+        select: { id: true },
+      });
+
+      if (duplicate) {
+        return NextResponse.json({ error: "分類名稱已存在" }, { status: 409 });
+      }
+    }
+
+    const category = await prisma.communicationCategory.update({
+      where: { id },
+      data: parsed.data,
+    });
+    const cards = await prisma.communicationCard.findMany({
+      where: { isVisible: true },
+      select: { categories: true, isVisible: true },
+    });
+
+    return NextResponse.json({ category: projectAdminCardCategories([category], cards)[0] });
   } catch (error) {
     if (isMissingCategoryError(error)) {
       return NextResponse.json({ error: "找不到分類" }, { status: 404 });
     }
 
-    console.error("更新分類顯示狀態失敗:", error);
-    return NextResponse.json({ error: "更新分類顯示狀態失敗" }, { status: 500 });
+    console.error("更新分類失敗:", error);
+    return NextResponse.json({ error: "更新分類失敗" }, { status: 500 });
   }
 }

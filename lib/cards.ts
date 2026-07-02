@@ -22,6 +22,7 @@ export type CardsResponse = {
 export type CardCategoryProjection = {
   key: string;
   name: string;
+  emoji: string | null;
   sortOrder: number;
   isVisible: boolean;
   cardCount: number;
@@ -30,7 +31,6 @@ export type CardCategoryProjection = {
 
 export type AdminCardCategoryProjection = CardCategoryProjection & {
   id: string;
-  emoji: string | null;
 };
 
 export type CardCategoriesResponse = {
@@ -117,11 +117,20 @@ type CategoryVisibilityParseResult =
   | { ok: true; isVisible: boolean }
   | { ok: false; error: string; status: number };
 
+type CategoryCreateParseResult =
+  | { ok: true; data: { name: string; emoji: string | null } }
+  | { ok: false; error: string; status: number };
+
+type CategoryUpdateParseResult =
+  | { ok: true; data: { name?: string; emoji?: string | null; isVisible?: boolean } }
+  | { ok: false; error: string; status: number };
+
 type CategoryOrderParseResult =
   | { ok: true; categoryIds: string[] }
   | { ok: false; error: string; status: number };
 
 const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const codePointLength = (value: string) => Array.from(value).length;
 
 const hasOwn = (body: Record<string, unknown>, key: string) =>
   Object.prototype.hasOwnProperty.call(body, key);
@@ -163,6 +172,7 @@ const collectCardCategories = (
   return Array.from(counts, ([category, cardCount], sortOrder) => ({
     key: category,
     name: category,
+    emoji: null,
     sortOrder,
     isVisible: true,
     cardCount,
@@ -208,6 +218,7 @@ export const projectStoredCardCategories = (
     return {
       key: category.key,
       name: category.name,
+      emoji: category.emoji,
       sortOrder: category.sortOrder,
       isVisible: category.isVisible,
       cardCount,
@@ -227,10 +238,128 @@ export const projectAdminCardCategories = (
 
     return {
       id: stored.id,
-      emoji: stored.emoji,
       ...category,
     };
   });
+};
+
+export const formatCardCategoryName = (
+  category: Pick<CardCategoryProjection, "name" | "emoji">
+) => (category.emoji ? `${category.emoji} ${category.name}` : category.name);
+
+const parseCategoryNameValue = (
+  value: unknown
+): string | { ok: false; error: string; status: number } => {
+  if (typeof value !== "string") {
+    return { ok: false, error: "分類名稱必須是字串", status: 400 };
+  }
+
+  const name = value.trim();
+
+  if (!name) return { ok: false, error: "分類名稱必填", status: 400 };
+  if (/[\r\n]/.test(name)) {
+    return { ok: false, error: "分類名稱不可包含換行", status: 400 };
+  }
+  if (codePointLength(name) > 30) {
+    return { ok: false, error: "分類名稱最多 30 字", status: 400 };
+  }
+
+  return name;
+};
+
+const parseCategoryEmojiValue = (
+  value: unknown
+): string | null | { ok: false; error: string; status: number } => {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") {
+    return { ok: false, error: "Emoji 必須是字串", status: 400 };
+  }
+
+  const emoji = value.trim();
+
+  if (!emoji) return null;
+  if (codePointLength(emoji) > 8) {
+    return { ok: false, error: "Emoji 最多 8 個字元", status: 400 };
+  }
+  if (/[\p{Letter}\p{Number}]/u.test(emoji) || !/\p{Extended_Pictographic}/u.test(emoji)) {
+    return { ok: false, error: "Emoji 格式不正確", status: 400 };
+  }
+
+  return emoji;
+};
+
+const isCategoryParseError = (
+  value: unknown
+): value is { ok: false; error: string; status: number } =>
+  Boolean(value && typeof value === "object" && "ok" in value && value.ok === false);
+
+export const parseCategoryCreateInput = (
+  body: unknown
+): CategoryCreateParseResult => {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "資料格式不正確", status: 400 };
+  }
+
+  const source = body as Record<string, unknown>;
+  const allowed = new Set(["name", "emoji"]);
+
+  if (Object.keys(source).some((key) => !allowed.has(key))) {
+    return { ok: false, error: "只允許新增 name、emoji", status: 400 };
+  }
+  if (!hasOwn(source, "name")) {
+    return { ok: false, error: "分類名稱必填", status: 400 };
+  }
+
+  const name = parseCategoryNameValue(source.name);
+  if (isCategoryParseError(name)) return name;
+
+  const emoji = parseCategoryEmojiValue(source.emoji);
+  if (isCategoryParseError(emoji)) return emoji;
+
+  return { ok: true, data: { name, emoji } };
+};
+
+export const parseCategoryUpdateInput = (
+  body: unknown
+): CategoryUpdateParseResult => {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "資料格式不正確", status: 400 };
+  }
+
+  const source = body as Record<string, unknown>;
+  const allowed = new Set(["name", "emoji", "isVisible"]);
+
+  if (Object.keys(source).some((key) => !allowed.has(key))) {
+    return { ok: false, error: "只允許更新 name、emoji、isVisible", status: 400 };
+  }
+
+  const data: { name?: string; emoji?: string | null; isVisible?: boolean } = {};
+
+  if (hasOwn(source, "name")) {
+    const name = parseCategoryNameValue(source.name);
+    if (isCategoryParseError(name)) return name;
+    data.name = name;
+  }
+
+  if (hasOwn(source, "emoji")) {
+    const emoji = parseCategoryEmojiValue(source.emoji);
+    if (isCategoryParseError(emoji)) return emoji;
+    data.emoji = emoji;
+  }
+
+  if (hasOwn(source, "isVisible")) {
+    if (typeof source.isVisible !== "boolean") {
+      return { ok: false, error: "顯示狀態格式不正確", status: 400 };
+    }
+
+    data.isVisible = source.isVisible;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return { ok: false, error: "缺少可更新欄位", status: 400 };
+  }
+
+  return { ok: true, data };
 };
 
 export const parseCategoryVisibilityInput = (

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  formatCardCategoryName,
   sortCards,
   type CardCategoriesResponse,
   type CardCategoryProjection,
@@ -49,16 +50,15 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
     () => sortCards(cards.filter((card) => card.isVisible)),
     [cards]
   );
-  const categories = useMemo(
+  const visibleCategories = useMemo(
     () =>
       categoryProjections
-        .filter((category) => category.isVisible)
-        .map((category) => category.key),
+        .filter((category) => category.isVisible),
     [categoryProjections]
   );
-  const displayedCategory = categories.includes(activeCategory)
+  const displayedCategory = visibleCategories.some((category) => category.key === activeCategory)
     ? activeCategory
-    : categories[0] || "";
+    : visibleCategories[0]?.key || "";
   const categoryCards = displayedCategory
     ? visibleCards.filter((card) => card.categories.includes(displayedCategory))
     : [];
@@ -150,7 +150,7 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
             </div>
           ) : (
             <div className="grid min-h-[150px] place-items-center text-center">
-              {visibleCards.length === 0 || categories.length === 0 ? (
+              {visibleCards.length === 0 || visibleCategories.length === 0 ? (
                 <p className="text-lg font-extrabold text-[var(--ink-soft)]">
                   {visibleCards.length === 0 ? copy.noCards : copy.noCategories}
                 </p>
@@ -192,27 +192,27 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
           </button>
         </div>
 
-        {categories.length > 0 && (
+        {visibleCategories.length > 0 && (
           <nav
             className="hide-scrollbar -mx-3 flex shrink-0 gap-2 overflow-x-auto px-3 pb-1"
             aria-label={copy.categoryLabel}
           >
-            {categories.map((category) => {
-              const active = category === displayedCategory;
+            {visibleCategories.map((category) => {
+              const active = category.key === displayedCategory;
 
               return (
                 <button
-                  key={category}
+                  key={category.key}
                   type="button"
                   aria-pressed={active}
-                  onClick={() => setActiveCategory(category)}
+                  onClick={() => setActiveCategory(category.key)}
                   className={`shrink-0 rounded-md border px-3 py-2 text-sm font-extrabold ${
                     active
                       ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
                       : "border-[var(--line-main)] bg-[var(--panel-soft)] text-[var(--ink-soft)]"
                   }`}
                 >
-                  {category}
+                  {formatCardCategoryName(category)}
                 </button>
               );
             })}
@@ -246,7 +246,7 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
                 );
               })}
             </section>
-          ) : categories.length === 0 ? (
+          ) : visibleCategories.length === 0 ? (
             <p className="rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-4 text-center text-sm font-bold text-[var(--ink-soft)]">
               {copy.noCategories}
             </p>

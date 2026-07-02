@@ -13,6 +13,7 @@ import {
 import {
   DELETE_ALL_CONFIRMATION,
   exportCardsToTsv,
+  formatCardCategoryName,
   normalizeCategories,
   parseBatchTsv,
   sortCards,
@@ -38,6 +39,11 @@ type CardFormState = {
   isVisible: boolean;
 };
 
+type CategoryFormState = {
+  emoji: string;
+  name: string;
+};
+
 const emptyForm = (): CardFormState => ({
   categories: "常用",
   emoji: "",
@@ -49,6 +55,11 @@ const emptyForm = (): CardFormState => ({
   note: "",
   sortOrder: "0",
   isVisible: true,
+});
+
+const emptyCategoryForm = (): CategoryFormState => ({
+  emoji: "",
+  name: "",
 });
 
 const jsonHeaders: HeadersInit = { "Content-Type": "application/json" };
@@ -77,6 +88,16 @@ const formToPayload = (form: CardFormState): CardWriteData => ({
   note: form.note.trim() || null,
   sortOrder: Number(form.sortOrder),
   isVisible: form.isVisible,
+});
+
+const categoryToForm = (category: AdminCardCategoryProjection): CategoryFormState => ({
+  emoji: category.emoji || "",
+  name: category.name,
+});
+
+const categoryFormToPayload = (form: CategoryFormState) => ({
+  emoji: form.emoji.trim() || null,
+  name: form.name.trim(),
 });
 
 const readApiError = async (response: Response) => {
@@ -416,7 +437,12 @@ function CategoryManager({
   isBusy: boolean;
 }) {
   const ORDER_PENDING_ID = "__category-order__";
+  const CREATE_PENDING_ID = "__category-create__";
   const [orderedCategories, setOrderedCategories] = useState(categories);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryForm, setNewCategoryForm] = useState(emptyCategoryForm);
+  const [editingId, setEditingId] = useState("");
+  const [editCategoryForm, setEditCategoryForm] = useState(emptyCategoryForm);
   const [pendingId, setPendingId] = useState("");
   const [message, setMessage] = useState("");
   const [draggingId, setDraggingId] = useState("");
@@ -429,6 +455,8 @@ function CategoryManager({
   } | null>(null);
   const visibleCount = orderedCategories.filter((category) => category.isVisible).length;
   const disabled = isBusy || pendingId.length > 0;
+  const inputClass =
+    "rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-[var(--ink-main)] outline-none focus-visible:border-[var(--accent)]";
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -505,6 +533,73 @@ function CategoryManager({
     next.splice(toIndex, 0, category);
     setOrderedCategories(next);
     void saveOrder(next, previous);
+  };
+
+  const createCategory = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPendingId(CREATE_PENDING_ID);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/card-categories", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify(categoryFormToPayload(newCategoryForm)),
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const data = (await response.json()) as { category: AdminCardCategoryProjection };
+      setOrderedCategories((current) => [...current, data.category]);
+      await onReloadCards();
+      setNewCategoryForm(emptyCategoryForm());
+      setIsAddingCategory(false);
+      setMessage("已新增分類");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "新增分類失敗");
+    } finally {
+      setPendingId("");
+    }
+  };
+
+  const startEditingCategory = (category: AdminCardCategoryProjection) => {
+    if (disabled) return;
+
+    setIsAddingCategory(false);
+    setEditingId(category.id);
+    setEditCategoryForm(categoryToForm(category));
+    setMessage("");
+  };
+
+  const saveCategory = async (
+    event: FormEvent<HTMLFormElement>,
+    category: AdminCardCategoryProjection
+  ) => {
+    event.preventDefault();
+    setPendingId(category.id);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/admin/card-categories/${category.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders,
+        body: JSON.stringify(categoryFormToPayload(editCategoryForm)),
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const data = (await response.json()) as { category: AdminCardCategoryProjection };
+      setOrderedCategories((current) =>
+        current.map((item) => (item.id === data.category.id ? data.category : item))
+      );
+      await onReloadCards();
+      setEditingId("");
+      setMessage("分類已更新");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "更新分類失敗");
+    } finally {
+      setPendingId("");
+    }
   };
 
   const startDragging = () => {
@@ -611,11 +706,77 @@ function CategoryManager({
             顯示 {visibleCount} 個，隱藏 {orderedCategories.length - visibleCount} 個
           </p>
         </div>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            setIsAddingCategory(true);
+            setEditingId("");
+            setMessage("");
+          }}
+          className="secondary-button disabled:opacity-50"
+        >
+          ＋ 新增分類
+        </button>
       </div>
+
+      {isAddingCategory && (
+        <form
+          className="grid gap-3 rounded-md border border-[var(--line-main)] bg-[var(--panel-soft)] p-3"
+          onSubmit={createCategory}
+        >
+          <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)]">
+            <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor="new-category-emoji">
+              Emoji
+              <input
+                id="new-category-emoji"
+                className={inputClass}
+                value={newCategoryForm.emoji}
+                maxLength={16}
+                onChange={(event) =>
+                  setNewCategoryForm({ ...newCategoryForm, emoji: event.target.value })
+                }
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor="new-category-name">
+              分類名稱
+              <input
+                id="new-category-name"
+                className={inputClass}
+                value={newCategoryForm.name}
+                maxLength={30}
+                onChange={(event) =>
+                  setNewCategoryForm({ ...newCategoryForm, name: event.target.value })
+                }
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={disabled || newCategoryForm.name.trim().length === 0}
+              className="primary-button disabled:opacity-50"
+            >
+              新增
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                setIsAddingCategory(false);
+                setNewCategoryForm(emptyCategoryForm());
+              }}
+              className="secondary-button disabled:opacity-50"
+            >
+              取消
+            </button>
+          </div>
+        </form>
+      )}
 
       {orderedCategories.length === 0 || visibleCount === 0 ? (
         <p className="rounded-md border border-[var(--line-main)] bg-[var(--panel-soft)] p-3 text-sm font-bold text-[var(--ink-soft)]">
-          目前所有分類皆已隱藏
+          {orderedCategories.length === 0 ? "目前沒有分類" : "目前所有分類皆已隱藏"}
         </p>
       ) : null}
 
@@ -629,7 +790,7 @@ function CategoryManager({
               <div
                 key={category.id}
                 data-category-row-id={category.id}
-                className={`flex items-center justify-between gap-2 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-3 ${
+                className={`grid gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center ${
                   isDragging ? "opacity-50 outline outline-2 outline-[var(--accent)]" : ""
                 }`}
               >
@@ -648,10 +809,9 @@ function CategoryManager({
 
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-lg leading-none" aria-hidden="true">
-                      {category.emoji || "·"}
+                    <span className="break-words font-extrabold">
+                      {formatCardCategoryName(category)}
                     </span>
-                    <span className="break-words font-extrabold">{category.name}</span>
                     {!category.isVisible && (
                       <span className="rounded bg-[var(--button-bg)] px-2 py-1 text-xs font-extrabold text-[var(--danger)]">
                         已隱藏
@@ -659,11 +819,19 @@ function CategoryManager({
                     )}
                   </div>
                   <p className="mt-1 text-xs font-bold text-[var(--ink-soft)]">
-                    {category.cardCount} 張字卡 · {category.pageCount} 頁 · sortOrder {category.sortOrder}
+                    {category.cardCount} 張字卡 · {category.pageCount} 頁
                   </p>
                 </div>
 
                 <div className="grid shrink-0 gap-1">
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => startEditingCategory(category)}
+                    className="rounded-md border border-[var(--line-main)] bg-[var(--button-bg)] px-3 py-2 text-sm font-extrabold disabled:opacity-40"
+                  >
+                    編輯
+                  </button>
                   <label className="inline-flex items-center gap-2 rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-sm font-extrabold">
                     <input
                       type="checkbox"
@@ -694,6 +862,63 @@ function CategoryManager({
                     </button>
                   </div>
                 </div>
+
+                {editingId === category.id && (
+                  <form
+                    className="grid gap-3 border-t border-[var(--line-main)] pt-3 sm:col-span-3"
+                    onSubmit={(event) => saveCategory(event, category)}
+                  >
+                    <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)]">
+                      <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={`category-${category.id}-emoji`}>
+                        Emoji
+                        <input
+                          id={`category-${category.id}-emoji`}
+                          className={inputClass}
+                          value={editCategoryForm.emoji}
+                          maxLength={16}
+                          onChange={(event) =>
+                            setEditCategoryForm({
+                              ...editCategoryForm,
+                              emoji: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={`category-${category.id}-name`}>
+                        分類名稱
+                        <input
+                          id={`category-${category.id}-name`}
+                          className={inputClass}
+                          value={editCategoryForm.name}
+                          maxLength={30}
+                          onChange={(event) =>
+                            setEditCategoryForm({
+                              ...editCategoryForm,
+                              name: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="submit"
+                        disabled={disabled || editCategoryForm.name.trim().length === 0}
+                        className="primary-button disabled:opacity-50"
+                      >
+                        儲存
+                      </button>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setEditingId("")}
+                        className="secondary-button disabled:opacity-50"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             );
           })}
