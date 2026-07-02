@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import DrawingOverlay from "@/app/DrawingOverlay";
 import {
   formatCardCategoryName,
   sortCards,
@@ -46,6 +47,7 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
   const [selectedCardId, setSelectedCardId] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("zh");
+  const [isDrawing, setIsDrawing] = useState(false);
   const visibleCards = useMemo(
     () => sortCards(cards.filter((card) => card.isVisible)),
     [cards]
@@ -122,48 +124,58 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
     <main className="h-[100dvh] overflow-hidden px-3 py-3 text-[var(--ink-main)] sm:px-4">
       <h1 className="sr-only">狼狼按鈕</h1>
       <div className="app-shell mx-auto flex h-full min-h-0 flex-col gap-3">
-        <section
-          className="display-panel min-h-[190px] flex-1 overflow-y-auto rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4"
-          aria-live="polite"
-        >
-          {selectedCard ? (
-            <div className="grid gap-3">
-              <div className="text-center text-5xl leading-none" aria-hidden="true">
-                {selectedCard.emoji}
-              </div>
-              <p className="break-words text-center text-2xl font-black leading-snug">
-                {selectedCard.zh}
-              </p>
-              <p className="break-words text-center text-xl font-extrabold leading-snug text-[var(--ink-main)]">
-                {selectedCard.ja}
-              </p>
-              {selectedCard.en && (
-                <p className="break-words text-center text-base font-bold leading-snug text-[var(--ink-soft)]">
-                  {selectedCard.en}
-                </p>
-              )}
-              {selectedCard.note && (
-                <p className="rounded-md border border-[var(--line-soft)] bg-[var(--panel-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-soft)]">
-                  {selectedCard.note}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="grid min-h-[150px] place-items-center text-center">
-              {visibleCards.length === 0 || visibleCategories.length === 0 ? (
-                <p className="text-lg font-extrabold text-[var(--ink-soft)]">
-                  {visibleCards.length === 0 ? copy.noCards : copy.noCategories}
-                </p>
-              ) : (
-                <div className="grid gap-2">
-                  <p className="text-2xl font-black">請點一張字卡</p>
-                  <p className="text-xl font-extrabold">カードを選んでください</p>
-                  <p className="text-base font-bold text-[var(--ink-soft)]">Tap a card</p>
+        <div className="relative min-h-[190px] flex-1">
+          <section
+            className="display-panel h-full overflow-y-auto rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4"
+            aria-live="polite"
+          >
+            {selectedCard ? (
+              <div className="grid gap-3">
+                <div className="text-center text-5xl leading-none" aria-hidden="true">
+                  {selectedCard.emoji}
                 </div>
-              )}
-            </div>
-          )}
-        </section>
+                <p className="break-words text-center text-2xl font-black leading-snug">
+                  {selectedCard.zh}
+                </p>
+                <p className="break-words text-center text-xl font-extrabold leading-snug text-[var(--ink-main)]">
+                  {selectedCard.ja}
+                </p>
+                {selectedCard.en && (
+                  <p className="break-words text-center text-base font-bold leading-snug text-[var(--ink-soft)]">
+                    {selectedCard.en}
+                  </p>
+                )}
+                {selectedCard.note && (
+                  <p className="rounded-md border border-[var(--line-soft)] bg-[var(--panel-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-soft)]">
+                    {selectedCard.note}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="grid min-h-[150px] place-items-center text-center">
+                {visibleCards.length === 0 || visibleCategories.length === 0 ? (
+                  <p className="text-lg font-extrabold text-[var(--ink-soft)]">
+                    {visibleCards.length === 0 ? copy.noCards : copy.noCategories}
+                  </p>
+                ) : (
+                  <div className="grid gap-2">
+                    <p className="text-2xl font-black">請點一張字卡</p>
+                    <p className="text-xl font-extrabold">カードを選んでください</p>
+                    <p className="text-base font-bold text-[var(--ink-soft)]">Tap a card</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+          <button
+            type="button"
+            aria-label="進入畫圖模式"
+            onClick={() => setIsDrawing(true)}
+            className="absolute right-3 top-3 z-10 grid h-11 w-11 place-items-center rounded-md border border-[var(--line-main)] bg-[var(--button-bg)] text-xl shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          >
+            🖋
+          </button>
+        </div>
 
         <div className="grid shrink-0 grid-cols-2 gap-2 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-1">
           <button
@@ -266,6 +278,7 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
           {copy.admin}
         </Link>
       </div>
+      {isDrawing && <DrawingOverlay onClose={() => setIsDrawing(false)} />}
     </main>
   );
 }
