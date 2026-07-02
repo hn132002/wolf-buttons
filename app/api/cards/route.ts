@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { getCardCategories, parseCardInput, serializeCard } from "@/lib/cards";
+import {
+  DELETE_ALL_CONFIRMATION,
+  getCardCategories,
+  parseCardInput,
+  serializeCard,
+} from "@/lib/cards";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -62,5 +67,28 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("新增字卡失敗:", error);
     return NextResponse.json({ error: "新增字卡失敗" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const denied = requireAdmin(request);
+
+    if (denied) return denied;
+
+    const body = (await request.json().catch(() => null)) as {
+      confirm?: unknown;
+    } | null;
+
+    if (body?.confirm !== DELETE_ALL_CONFIRMATION) {
+      return NextResponse.json({ error: "清空確認失敗" }, { status: 400 });
+    }
+
+    const result = await prisma.communicationCard.deleteMany();
+
+    return NextResponse.json({ deleted: result.count });
+  } catch (error) {
+    console.error("清空字卡失敗:", error);
+    return NextResponse.json({ error: "清空字卡失敗" }, { status: 500 });
   }
 }

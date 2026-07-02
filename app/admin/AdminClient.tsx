@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
+  DELETE_ALL_CONFIRMATION,
   exportCardsToTsv,
   normalizeCategories,
   parseBatchTsv,
@@ -82,6 +83,21 @@ const readApiError = async (response: Response) => {
   if (Array.isArray(data?.errors)) return data.errors.join("、");
   return typeof data?.error === "string" ? data.error : "操作失敗";
 };
+
+function LoadingOverlay() {
+  return (
+    <div
+      role="status"
+      aria-live="assertive"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 backdrop-blur-sm"
+    >
+      <div className="grid gap-3 text-center">
+        <span className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-[var(--line-soft)] border-t-[var(--accent)]" />
+        <p className="text-sm font-extrabold text-[var(--ink-main)]">處理中...</p>
+      </div>
+    </div>
+  );
+}
 
 function CardFields({
   form,
@@ -214,17 +230,20 @@ function BatchManager({
   cards,
   adminSecret,
   onReloadCards,
+  isBusy,
+  onBusyChange,
 }: {
   cards: CommunicationCard[];
   adminSecret: string;
   onReloadCards: () => Promise<void>;
+  isBusy: boolean;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const [batchText, setBatchText] = useState("");
   const [applyMode, setApplyMode] = useState<BatchApplyMode>("upsert");
   const [preview, setPreview] = useState<BatchPreview | null>(null);
-  const [isApplying, setIsApplying] = useState(false);
   const [message, setMessage] = useState("");
-  const canApply = preview && preview.errors.length === 0 && !isApplying;
+  const canApply = Boolean(preview && preview.errors.length === 0 && !isBusy);
   const previewLabels = useMemo(
     () =>
       preview
@@ -242,9 +261,16 @@ function BatchManager({
   );
 
   const exportCards = () => {
-    setBatchText(exportCardsToTsv(cards));
-    setPreview(null);
-    setMessage("已匯出全部字卡。");
+    onBusyChange(true);
+    window.requestAnimationFrame(() => {
+      try {
+        setBatchText(exportCardsToTsv(cards));
+        setPreview(null);
+        setMessage("已匯出全部字卡。");
+      } finally {
+        onBusyChange(false);
+      }
+    });
   };
 
   const parsePreview = () => {
@@ -255,7 +281,7 @@ function BatchManager({
   };
 
   const applyPreview = async () => {
-    if (!canApply) return;
+    if (!preview || !canApply) return;
     if (
       applyMode === "replace" &&
       !window.confirm("TSV 未包含的既有字卡會直接刪除，且無法復原。")
@@ -263,7 +289,7 @@ function BatchManager({
       return;
     }
 
-    setIsApplying(true);
+    onBusyChange(true);
     setMessage("");
 
     try {
@@ -291,7 +317,7 @@ function BatchManager({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "套用失敗");
     } finally {
-      setIsApplying(false);
+      onBusyChange(false);
     }
   };
 
@@ -299,7 +325,7 @@ function BatchManager({
     <section className="grid gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xl font-extrabold">TSV</h2>
-        <button type="button" onClick={exportCards} className="primary-button">
+        <button type="button" onClick={exportCards} disabled={isBusy} className="primary-button disabled:opacity-50">
           匯出
         </button>
       </div>
@@ -345,7 +371,7 @@ function BatchManager({
       </label>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={parsePreview} disabled={isApplying} className="secondary-button">
+        <button type="button" onClick={parsePreview} disabled={isBusy} className="secondary-button disabled:opacity-50">
           解析預覽
         </button>
         <button type="button" onClick={applyPreview} disabled={!canApply} className="primary-button disabled:opacity-50">
@@ -382,11 +408,13 @@ function EditCardDetails({
   adminSecret,
   onSaved,
   onDeleted,
+  onBusyChange,
 }: {
   card: CommunicationCard;
   adminSecret: string;
   onSaved: (card: CommunicationCard) => void;
   onDeleted: (id: string) => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const [form, setForm] = useState(() => cardToForm(card));
   const [isSaving, setIsSaving] = useState(false);
@@ -395,6 +423,7 @@ function EditCardDetails({
   const saveCard = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSaving(true);
+    onBusyChange(true);
     setMessage("");
 
     try {
@@ -414,6 +443,7 @@ function EditCardDetails({
       setMessage(error instanceof Error ? error.message : "儲存失敗");
     } finally {
       setIsSaving(false);
+      onBusyChange(false);
     }
   };
 
@@ -421,6 +451,7 @@ function EditCardDetails({
     if (!window.confirm("直接刪除這張字卡，且無法復原。確定刪除？")) return;
 
     setIsSaving(true);
+    onBusyChange(true);
     setMessage("");
 
     try {
@@ -436,6 +467,7 @@ function EditCardDetails({
       setMessage(error instanceof Error ? error.message : "刪除失敗");
     } finally {
       setIsSaving(false);
+      onBusyChange(false);
     }
   };
 
@@ -480,8 +512,8 @@ export default function AdminClient() {
   const [message, setMessage] = useState("");
   const [newCardForm, setNewCardForm] = useState(emptyForm);
 
-  const loadCards = useCallback(async (nextSecret: string) => {
-    setIsLoading(true);
+  const loadCards = useCallback(async (nextSecret: string, showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     setMessage("");
 
     try {
@@ -505,7 +537,7 @@ export default function AdminClient() {
       window.sessionStorage.removeItem(ADMIN_SECRET_SESSION_KEY);
       setMessage(error instanceof Error ? error.message : "登入失敗");
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   }, []);
 
@@ -548,6 +580,40 @@ export default function AdminClient() {
       setMessage("已新增字卡");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "新增失敗");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteAllCards = async () => {
+    if (cards.length === 0) return;
+
+    const answer = window.prompt(
+      `這會永久刪除 ${cards.length} 張字卡，無法復原。請輸入「全部刪除」確認。`
+    );
+
+    if (answer !== "全部刪除") {
+      setMessage("已取消清空");
+      return;
+    }
+
+    setIsLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/cards", {
+        method: "DELETE",
+        headers: adminHeaders(secret, true),
+        body: JSON.stringify({ confirm: DELETE_ALL_CONFIRMATION }),
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const result = (await response.json()) as { deleted: number };
+      setCards([]);
+      setMessage(`已刪除 ${result.deleted} 張字卡`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "清空失敗");
     } finally {
       setIsLoading(false);
     }
@@ -596,6 +662,7 @@ export default function AdminClient() {
             返回使用模式
           </Link>
         </form>
+        {isLoading && <LoadingOverlay />}
       </main>
     );
   }
@@ -614,13 +681,27 @@ export default function AdminClient() {
             <Link href="/" className="secondary-button">
               返回使用模式
             </Link>
+            <button
+              type="button"
+              onClick={deleteAllCards}
+              disabled={isLoading || cards.length === 0}
+              className="danger-button disabled:opacity-50"
+            >
+              全部刪除
+            </button>
             <button type="button" onClick={leaveAdmin} className="secondary-button">
               離開管理模式
             </button>
           </div>
         </header>
 
-        <BatchManager cards={cards} adminSecret={secret} onReloadCards={() => loadCards(secret)} />
+        <BatchManager
+          cards={cards}
+          adminSecret={secret}
+          onReloadCards={() => loadCards(secret, false)}
+          isBusy={isLoading}
+          onBusyChange={setIsLoading}
+        />
 
         <section className="grid gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4">
           <h2 className="text-xl font-extrabold">新增字卡</h2>
@@ -652,12 +733,14 @@ export default function AdminClient() {
                   onDeleted={(id) => {
                     setCards((current) => current.filter((card) => card.id !== id));
                   }}
+                  onBusyChange={setIsLoading}
                 />
               ))}
             </div>
           )}
         </section>
       </div>
+      {isLoading && <LoadingOverlay />}
     </main>
   );
 }

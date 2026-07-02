@@ -59,6 +59,8 @@ export type BatchPreview = {
   errors: string[];
 };
 
+export const DELETE_ALL_CONFIRMATION = "DELETE_ALL_CARDS";
+
 export const TSV_COLUMNS = [
   "id",
   "categories",
