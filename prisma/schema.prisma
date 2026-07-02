@@ -1,0 +1,24 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CommunicationCard {
+  id         String   @id @default(cuid())
+  emoji      String
+  label      String
+  labelJa    String?
+  zh         String
+  ja         String
+  en         String?
+  note       String?
+  categories String[]
+  sortOrder  Int      @default(0)
+  isVisible  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

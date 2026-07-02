@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --page-bg: #e8eee9;
+  --paper-bg: #fff8e8;
+  --paper-edge: #d4b06d;
+  --paper-shadow: rgba(65, 43, 20, 0.16);
+  --ink-main: #2e2c27;
+  --ink-soft: #68645b;
+  --line-main: #cdbb9a;
+  --control-bg: rgba(255, 253, 246, 0.96);
+  --accent: #27646b;
+  --accent-soft: #dceff0;
+  --danger: #b3342b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  overflow-x: hidden;
+  background:
+    linear-gradient(180deg, #f8f0df 0%, var(--page-bg) 56%, #d9e4dd 100%);
+  color: var(--ink-main);
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+.parchment-panel {
+  border: 1px solid var(--paper-edge);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.68), transparent 34%),
+    linear-gradient(180deg, var(--paper-bg), #f3dfb7);
+  box-shadow:
+    inset 0 0 32px rgba(149, 96, 35, 0.13),
+    0 12px 28px var(--paper-shadow);
+}
