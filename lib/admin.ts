@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
+import { hasAdminAccess } from "@/lib/admin-secret";
 
 export const requireAdmin = (request: Request) => {
-  const secret = process.env.ADMIN_SECRET;
-
-  if (!secret) {
-    return NextResponse.json({ error: "伺服器設定錯誤" }, { status: 500 });
+  if (hasAdminAccess(process.env.ADMIN_SECRET, request.headers.get("x-admin-secret"))) {
+    return null;
   }
 
-  if (request.headers.get("x-admin-secret") === secret) return null;
-
-  return NextResponse.json({ error: "管理密碼錯誤" }, { status: 401 });
+  return NextResponse.json({ error: "管理驗證失敗" }, { status: 401 });
 };

@@ -4,6 +4,8 @@ node_modules
 .env*.local
 .vercel
 dist
+artifacts
+tsconfig.tsbuildinfo
 .env*
 
 !.env.example
