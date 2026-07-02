@@ -174,7 +174,7 @@ export default function WolfButtonsClient({ initialCards }: Props) {
 
         {categories.length > 0 && (
           <nav
-            className="-mx-3 flex shrink-0 gap-2 overflow-x-auto px-3 pb-1"
+            className="hide-scrollbar -mx-3 flex shrink-0 gap-2 overflow-x-auto px-3 pb-1"
             aria-label={copy.categoryLabel}
           >
             {categories.map((category) => {
