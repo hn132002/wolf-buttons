@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  getCardCategories,
   sortCards,
+  type CardCategoriesResponse,
+  type CardCategoryProjection,
   type CardsResponse,
   type CommunicationCard,
 } from "@/lib/cards";
 
 type Props = {
   initialCards: CommunicationCard[];
+  initialCategories: CardCategoryProjection[];
 };
 
 type UiLanguage = "zh" | "ja";
@@ -21,12 +23,14 @@ const text = {
   zh: {
     categoryLabel: "分類",
     noCards: "目前沒有可使用的字卡",
+    noCategories: "目前所有分類皆已隱藏",
     emptyCategory: "這個分類目前沒有字卡",
     admin: "管理",
   },
   ja: {
     categoryLabel: "カテゴリ",
     noCards: "現在使えるカードはありません",
+    noCategories: "現在すべてのカテゴリが非表示です",
     emptyCategory: "このカテゴリにはカードがありません",
     admin: "管理",
   },
@@ -35,8 +39,9 @@ const text = {
 const getCardButtonLabel = (card: CommunicationCard, uiLanguage: UiLanguage) =>
   uiLanguage === "ja" ? card.labelJa || card.label : card.label;
 
-export default function WolfButtonsClient({ initialCards }: Props) {
+export default function WolfButtonsClient({ initialCards, initialCategories }: Props) {
   const [cards, setCards] = useState(() => sortCards(initialCards));
+  const [categoryProjections, setCategoryProjections] = useState(initialCategories);
   const [selectedCardId, setSelectedCardId] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("zh");
@@ -44,13 +49,19 @@ export default function WolfButtonsClient({ initialCards }: Props) {
     () => sortCards(cards.filter((card) => card.isVisible)),
     [cards]
   );
-  const categories = useMemo(() => getCardCategories(visibleCards), [visibleCards]);
+  const categories = useMemo(
+    () =>
+      categoryProjections
+        .filter((category) => category.isVisible)
+        .map((category) => category.key),
+    [categoryProjections]
+  );
   const displayedCategory = categories.includes(activeCategory)
     ? activeCategory
     : categories[0] || "";
   const categoryCards = displayedCategory
     ? visibleCards.filter((card) => card.categories.includes(displayedCategory))
-    : visibleCards;
+    : [];
   const selectedCard =
     visibleCards.find((card) => card.id === selectedCardId) || null;
   const copy = text[uiLanguage];
@@ -71,11 +82,20 @@ export default function WolfButtonsClient({ initialCards }: Props) {
 
     const loadCards = async () => {
       try {
-        const response = await fetch("/api/cards", { cache: "no-store" });
-        if (!response.ok) return;
+        const [cardsResponse, categoriesResponse] = await Promise.all([
+          fetch("/api/cards", { cache: "no-store" }),
+          fetch("/api/card-categories", { cache: "no-store" }),
+        ]);
 
-        const data = (await response.json()) as CardsResponse;
-        if (!cancelled) setCards(sortCards(Array.isArray(data.cards) ? data.cards : []));
+        if (!cancelled && cardsResponse.ok) {
+          const data = (await cardsResponse.json()) as CardsResponse;
+          setCards(sortCards(Array.isArray(data.cards) ? data.cards : []));
+        }
+
+        if (!cancelled && categoriesResponse.ok) {
+          const data = (await categoriesResponse.json()) as CardCategoriesResponse;
+          setCategoryProjections(Array.isArray(data.categories) ? data.categories : []);
+        }
       } catch {
         return;
       }
@@ -130,9 +150,9 @@ export default function WolfButtonsClient({ initialCards }: Props) {
             </div>
           ) : (
             <div className="grid min-h-[150px] place-items-center text-center">
-              {visibleCards.length === 0 ? (
+              {visibleCards.length === 0 || categories.length === 0 ? (
                 <p className="text-lg font-extrabold text-[var(--ink-soft)]">
-                  {copy.noCards}
+                  {visibleCards.length === 0 ? copy.noCards : copy.noCategories}
                 </p>
               ) : (
                 <div className="grid gap-2">
@@ -226,6 +246,10 @@ export default function WolfButtonsClient({ initialCards }: Props) {
                 );
               })}
             </section>
+          ) : categories.length === 0 ? (
+            <p className="rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-4 text-center text-sm font-bold text-[var(--ink-soft)]">
+              {copy.noCategories}
+            </p>
           ) : (
             visibleCards.length > 0 && (
               <p className="rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-4 text-center text-sm font-bold text-[var(--ink-soft)]">

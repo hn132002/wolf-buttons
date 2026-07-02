@@ -28,10 +28,24 @@ export type CardCategoryProjection = {
   pageCount: number;
 };
 
+export type AdminCardCategoryProjection = CardCategoryProjection & {
+  id: string;
+  emoji: string | null;
+};
+
+export type CardCategoriesResponse = {
+  categories: CardCategoryProjection[];
+};
+
+export type AdminCardCategoriesResponse = {
+  categories: AdminCardCategoryProjection[];
+};
+
 type StoredCardCategory = {
   id: string;
   key: string;
   name: string;
+  emoji: string | null;
   sortOrder: number;
   isVisible: boolean;
   createdAt: Date | string;
@@ -97,6 +111,10 @@ type TsvColumn = (typeof TSV_COLUMNS)[number];
 
 type ParseResult =
   | { ok: true; data: CardWriteData }
+  | { ok: false; error: string; status: number };
+
+type CategoryVisibilityParseResult =
+  | { ok: true; isVisible: boolean }
   | { ok: false; error: string; status: number };
 
 const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
@@ -192,6 +210,44 @@ export const projectStoredCardCategories = (
       pageCount: Math.ceil(cardCount / 9),
     };
   });
+};
+
+export const projectAdminCardCategories = (
+  categories: StoredCardCategory[],
+  cards: Pick<CommunicationCard, "categories" | "isVisible">[]
+): AdminCardCategoryProjection[] => {
+  const byKey = new Map(categories.map((category) => [category.key, category]));
+
+  return projectStoredCardCategories(categories, cards).map((category) => {
+    const stored = byKey.get(category.key)!;
+
+    return {
+      id: stored.id,
+      emoji: stored.emoji,
+      ...category,
+    };
+  });
+};
+
+export const parseCategoryVisibilityInput = (
+  body: unknown
+): CategoryVisibilityParseResult => {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "資料格式不正確", status: 400 };
+  }
+
+  const source = body as Record<string, unknown>;
+  const keys = Object.keys(source);
+
+  if (keys.length !== 1 || !hasOwn(source, "isVisible")) {
+    return { ok: false, error: "只允許更新 isVisible", status: 400 };
+  }
+
+  if (typeof source.isVisible !== "boolean") {
+    return { ok: false, error: "顯示狀態格式不正確", status: 400 };
+  }
+
+  return { ok: true, isVisible: source.isVisible };
 };
 
 export const sortCards = <

@@ -8,6 +8,8 @@ import {
   normalizeCategories,
   parseBatchTsv,
   sortCards,
+  type AdminCardCategoriesResponse,
+  type AdminCardCategoryProjection,
   type BatchApplyMode,
   type BatchPreview,
   type CardWriteData,
@@ -403,6 +405,114 @@ function BatchManager({
   );
 }
 
+function CategoryManager({
+  categories,
+  adminSecret,
+  onReloadCards,
+  isBusy,
+}: {
+  categories: AdminCardCategoryProjection[];
+  adminSecret: string;
+  onReloadCards: () => Promise<void>;
+  isBusy: boolean;
+}) {
+  const [pendingId, setPendingId] = useState("");
+  const [message, setMessage] = useState("");
+  const visibleCount = categories.filter((category) => category.isVisible).length;
+  const disabled = isBusy || pendingId.length > 0;
+
+  const toggleCategory = async (category: AdminCardCategoryProjection) => {
+    const isVisible = !category.isVisible;
+
+    setPendingId(category.id);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/admin/card-categories/${category.id}`, {
+        method: "PATCH",
+        headers: adminHeaders(adminSecret, true),
+        body: JSON.stringify({ isVisible }),
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      await onReloadCards();
+      setMessage(`${category.name} 已${isVisible ? "顯示" : "隱藏"}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "更新分類失敗");
+    } finally {
+      setPendingId("");
+    }
+  };
+
+  return (
+    <section className="grid gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-xl font-extrabold">分類管理</h2>
+          <p className="text-sm font-bold text-[var(--ink-soft)]">
+            顯示 {visibleCount} 個，隱藏 {categories.length - visibleCount} 個
+          </p>
+        </div>
+      </div>
+
+      {categories.length === 0 || visibleCount === 0 ? (
+        <p className="rounded-md border border-[var(--line-main)] bg-[var(--panel-soft)] p-3 text-sm font-bold text-[var(--ink-soft)]">
+          目前所有分類皆已隱藏
+        </p>
+      ) : null}
+
+      {categories.length > 0 && (
+        <div className="grid gap-2">
+          {categories.map((category) => {
+            const isPending = pendingId === category.id;
+
+            return (
+              <div
+                key={category.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-lg leading-none" aria-hidden="true">
+                      {category.emoji || "·"}
+                    </span>
+                    <span className="break-words font-extrabold">{category.name}</span>
+                    {!category.isVisible && (
+                      <span className="rounded bg-[var(--button-bg)] px-2 py-1 text-xs font-extrabold text-[var(--danger)]">
+                        已隱藏
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-[var(--ink-soft)]">
+                    {category.cardCount} 張字卡 · {category.pageCount} 頁 · sortOrder {category.sortOrder}
+                  </p>
+                </div>
+
+                <label className="inline-flex shrink-0 items-center gap-2 rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-sm font-extrabold">
+                  <input
+                    type="checkbox"
+                    checked={category.isVisible}
+                    disabled={disabled}
+                    onChange={() => void toggleCategory(category)}
+                  />
+                  {isPending ? "更新中" : category.isVisible ? "顯示" : "隱藏"}
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {message && (
+        <p aria-live="polite" className="text-sm font-bold text-[var(--ink-soft)]">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}
+
 function EditCardDetails({
   card,
   adminSecret,
@@ -507,6 +617,7 @@ export default function AdminClient() {
   const [secret, setSecret] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [cards, setCards] = useState<CommunicationCard[]>([]);
+  const [categories, setCategories] = useState<AdminCardCategoryProjection[]>([]);
   const [isAuthed, setIsAuthed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -517,15 +628,25 @@ export default function AdminClient() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/cards?includeHidden=1", {
-        headers: adminHeaders(nextSecret),
-        cache: "no-store",
-      });
+      const headers = adminHeaders(nextSecret);
+      const [cardsResponse, categoriesResponse] = await Promise.all([
+        fetch("/api/cards?includeHidden=1", {
+          headers,
+          cache: "no-store",
+        }),
+        fetch("/api/admin/card-categories", {
+          headers,
+          cache: "no-store",
+        }),
+      ]);
 
-      if (!response.ok) throw new Error(await readApiError(response));
+      if (!cardsResponse.ok) throw new Error(await readApiError(cardsResponse));
+      if (!categoriesResponse.ok) throw new Error(await readApiError(categoriesResponse));
 
-      const data = (await response.json()) as CardsResponse;
-      setCards(sortCards(Array.isArray(data.cards) ? data.cards : []));
+      const cardsData = (await cardsResponse.json()) as CardsResponse;
+      const categoriesData = (await categoriesResponse.json()) as AdminCardCategoriesResponse;
+      setCards(sortCards(Array.isArray(cardsData.cards) ? cardsData.cards : []));
+      setCategories(Array.isArray(categoriesData.categories) ? categoriesData.categories : []);
       setSecret(nextSecret);
       setIsAuthed(true);
       setPasswordInput("");
@@ -534,6 +655,7 @@ export default function AdminClient() {
       setIsAuthed(false);
       setSecret("");
       setCards([]);
+      setCategories([]);
       window.sessionStorage.removeItem(ADMIN_SECRET_SESSION_KEY);
       setMessage(error instanceof Error ? error.message : "登入失敗");
     } finally {
@@ -575,7 +697,7 @@ export default function AdminClient() {
 
       if (!response.ok) throw new Error(await readApiError(response));
 
-      mergeCard((await response.json()) as CommunicationCard);
+      await loadCards(secret, false);
       setNewCardForm(emptyForm());
       setMessage("已新增字卡");
     } catch (error) {
@@ -610,7 +732,7 @@ export default function AdminClient() {
       if (!response.ok) throw new Error(await readApiError(response));
 
       const result = (await response.json()) as { deleted: number };
-      setCards([]);
+      await loadCards(secret, false);
       setMessage(`已刪除 ${result.deleted} 張字卡`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "清空失敗");
@@ -625,6 +747,7 @@ export default function AdminClient() {
     setSecret("");
     setPasswordInput("");
     setCards([]);
+    setCategories([]);
   };
 
   if (!isAuthed) {
@@ -703,6 +826,13 @@ export default function AdminClient() {
           onBusyChange={setIsLoading}
         />
 
+        <CategoryManager
+          categories={categories}
+          adminSecret={secret}
+          onReloadCards={() => loadCards(secret, false)}
+          isBusy={isLoading}
+        />
+
         <section className="grid gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4">
           <h2 className="text-xl font-extrabold">新增字卡</h2>
           <form className="grid gap-3" onSubmit={createCard}>
@@ -729,9 +859,13 @@ export default function AdminClient() {
                   key={card.id}
                   card={card}
                   adminSecret={secret}
-                  onSaved={mergeCard}
+                  onSaved={(card) => {
+                    mergeCard(card);
+                    void loadCards(secret, false);
+                  }}
                   onDeleted={(id) => {
                     setCards((current) => current.filter((card) => card.id !== id));
+                    void loadCards(secret, false);
                   }}
                   onBusyChange={setIsLoading}
                 />

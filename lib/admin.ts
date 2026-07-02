@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { hasAdminAccess } from "@/lib/admin-secret";
+import { getAdminFailureStatus, hasAdminAccess } from "@/lib/admin-secret";
 
 export const requireAdmin = (request: Request) => {
-  if (hasAdminAccess(process.env.ADMIN_SECRET, request.headers.get("x-admin-secret"))) {
+  const given = request.headers.get("x-admin-secret");
+
+  if (hasAdminAccess(process.env.ADMIN_SECRET, given)) {
     return null;
   }
 
-  return NextResponse.json({ error: "管理驗證失敗" }, { status: 401 });
+  return NextResponse.json(
+    { error: "管理驗證失敗" },
+    { status: getAdminFailureStatus(given) }
+  );
 };
