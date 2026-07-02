@@ -19,6 +19,15 @@ export type CardsResponse = {
   cards: CommunicationCard[];
 };
 
+export type CardCategoryProjection = {
+  key: string;
+  name: string;
+  sortOrder: number;
+  isVisible: true;
+  cardCount: number;
+  pageCount: number;
+};
+
 export type CardWriteData = {
   emoji?: string;
   label?: string;
@@ -109,23 +118,34 @@ export const normalizeCategories = (value: unknown) => {
 export const joinCategories = (categories: unknown) =>
   normalizeCategories(categories).join("|");
 
-export const getCardCategories = (
+const collectCardCategories = (
   cards: Pick<CommunicationCard, "categories">[]
-) => {
-  const categories: string[] = [];
-  const seen = new Set<string>();
+): CardCategoryProjection[] => {
+  const counts = new Map<string, number>();
 
   for (const card of cards) {
     for (const category of normalizeCategories(card.categories)) {
-      if (seen.has(category)) continue;
-
-      seen.add(category);
-      categories.push(category);
+      counts.set(category, (counts.get(category) ?? 0) + 1);
     }
   }
 
-  return categories;
+  return Array.from(counts, ([category, cardCount], sortOrder) => ({
+    key: category,
+    name: category,
+    sortOrder,
+    isVisible: true,
+    cardCount,
+    pageCount: Math.ceil(cardCount / 9),
+  }));
 };
+
+export const getCardCategories = (
+  cards: Pick<CommunicationCard, "categories">[]
+) => collectCardCategories(cards).map((category) => category.key);
+
+export const projectCardCategories = (
+  cards: Pick<CommunicationCard, "categories" | "isVisible">[]
+) => collectCardCategories(cards.filter((card) => card.isVisible));
 
 export const sortCards = <
   T extends Pick<CommunicationCard, "id" | "sortOrder" | "createdAt">,
