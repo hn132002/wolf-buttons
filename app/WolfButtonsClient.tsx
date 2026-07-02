@@ -99,11 +99,11 @@ export default function WolfButtonsClient({ initialCards }: Props) {
   };
 
   return (
-    <main className="min-h-[100dvh] overflow-x-hidden px-3 py-3 text-[var(--ink-main)] sm:px-4">
+    <main className="h-[100dvh] overflow-hidden px-3 py-3 text-[var(--ink-main)] sm:px-4">
       <h1 className="sr-only">狼狼按鈕</h1>
-      <div className="app-shell mx-auto flex min-h-[calc(100dvh-1.5rem)] flex-col gap-3">
+      <div className="app-shell mx-auto flex h-full min-h-0 flex-col gap-3">
         <section
-          className="display-panel min-h-[190px] shrink-0 overflow-y-auto rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4"
+          className="display-panel min-h-[190px] flex-1 overflow-y-auto rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4"
           aria-live="polite"
         >
           {selectedCard ? (
@@ -145,7 +145,7 @@ export default function WolfButtonsClient({ initialCards }: Props) {
           )}
         </section>
 
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-1">
+        <div className="grid shrink-0 grid-cols-2 gap-2 rounded-lg border border-[var(--line-main)] bg-[var(--panel-soft)] p-1">
           <button
             type="button"
             aria-pressed={uiLanguage === "zh"}
@@ -199,9 +199,9 @@ export default function WolfButtonsClient({ initialCards }: Props) {
           </nav>
         )}
 
-        <div className="min-h-[9rem] min-w-0 flex-1 overflow-y-auto overflow-x-hidden pb-3">
+        <div className="h-[244px] min-w-0 shrink-0 overflow-y-auto overflow-x-hidden">
           {categoryCards.length > 0 ? (
-            <section className="grid w-full min-w-0 grid-cols-3 gap-2" aria-label="字卡按鈕">
+            <section className="grid w-full min-w-0 grid-cols-3 gap-2 auto-rows-[76px]" aria-label="字卡按鈕">
               {categoryCards.map((card) => {
                 const selected = selectedCard?.id === card.id;
 
@@ -210,7 +210,7 @@ export default function WolfButtonsClient({ initialCards }: Props) {
                     key={card.id}
                     type="button"
                     onClick={() => setSelectedCardId(card.id)}
-                    className={`min-h-[76px] min-w-0 rounded-lg border px-2 py-2 text-center font-extrabold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+                    className={`h-[76px] min-w-0 overflow-hidden rounded-lg border px-2 py-2 text-center font-extrabold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                       selected
                         ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
                         : "border-[var(--line-main)] bg-[var(--button-bg)] text-[var(--ink-main)]"
@@ -237,7 +237,7 @@ export default function WolfButtonsClient({ initialCards }: Props) {
 
         <Link
           href="/admin"
-          className="self-center pb-[env(safe-area-inset-bottom)] text-xs font-bold text-[var(--ink-muted)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+          className="shrink-0 self-center pb-[env(safe-area-inset-bottom)] text-xs font-bold text-[var(--ink-muted)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
         >
           {copy.admin}
         </Link>
