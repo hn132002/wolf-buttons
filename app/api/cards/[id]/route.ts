@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { parseCardInput, serializeCard } from "@/lib/cards";
+import { parseCardInput, resolveCardCategoryKeys, serializeCard } from "@/lib/cards";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,22 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+    }
+
+    if (parsed.data.categories) {
+      const categories = await prisma.communicationCategory.findMany({
+        select: { key: true, name: true, emoji: true },
+      });
+      const resolvedCategories = resolveCardCategoryKeys(parsed.data.categories, categories);
+
+      if (!resolvedCategories.ok) {
+        return NextResponse.json(
+          { error: resolvedCategories.error },
+          { status: resolvedCategories.status }
+        );
+      }
+
+      parsed.data.categories = resolvedCategories.categories;
     }
 
     const card = await prisma.communicationCard.update({

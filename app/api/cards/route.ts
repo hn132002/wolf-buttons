@@ -4,6 +4,7 @@ import {
   DELETE_ALL_CONFIRMATION,
   getCardCategories,
   parseCardInput,
+  resolveCardCategoryKeys,
   serializeCard,
 } from "@/lib/cards";
 import { prisma } from "@/lib/prisma";
@@ -48,6 +49,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
 
+    const categories = await prisma.communicationCategory.findMany({
+      select: { key: true, name: true, emoji: true },
+    });
+    const resolvedCategories = resolveCardCategoryKeys(parsed.data.categories, categories);
+
+    if (!resolvedCategories.ok) {
+      return NextResponse.json(
+        { error: resolvedCategories.error },
+        { status: resolvedCategories.status }
+      );
+    }
+
     const card = await prisma.communicationCard.create({
       data: {
         emoji: parsed.data.emoji!,
@@ -57,7 +70,7 @@ export async function POST(request: Request) {
         ja: parsed.data.ja!,
         en: parsed.data.en ?? null,
         note: parsed.data.note ?? null,
-        categories: parsed.data.categories!,
+        categories: resolvedCategories.categories,
         sortOrder: parsed.data.sortOrder ?? 0,
         isVisible: parsed.data.isVisible ?? true,
       },

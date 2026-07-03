@@ -258,6 +258,43 @@ export const countCardsByCategoryKey = (
     0
   );
 
+export const resolveCardCategoryKeys = (
+  inputCategories: unknown,
+  storedCategories: Pick<StoredCardCategory, "key" | "name" | "emoji">[]
+) => {
+  const aliases = new Map<string, string>();
+
+  for (const category of storedCategories) {
+    for (const alias of [category.key, category.name, formatCardCategoryName(category)]) {
+      if (alias && !aliases.has(alias)) aliases.set(alias, category.key);
+    }
+  }
+
+  const resolved: string[] = [];
+  const missing: string[] = [];
+
+  for (const category of normalizeCategories(inputCategories)) {
+    const key = aliases.get(category);
+
+    if (!key) {
+      missing.push(category);
+      continue;
+    }
+
+    if (!resolved.includes(key)) resolved.push(key);
+  }
+
+  if (missing.length > 0) {
+    return { ok: false as const, error: `找不到分類：${missing.join("、")}`, status: 400 };
+  }
+
+  if (resolved.length === 0) {
+    return { ok: false as const, error: "分類至少要有一個", status: 400 };
+  }
+
+  return { ok: true as const, categories: resolved };
+};
+
 const parseCategoryNameValue = (
   value: unknown
 ): string | { ok: false; error: string; status: number } => {

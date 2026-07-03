@@ -131,20 +131,43 @@ function CardFields({
   form,
   onChange,
   idPrefix,
+  categoryOptions = [],
 }: {
   form: CardFormState;
   onChange: (next: CardFormState) => void;
   idPrefix: string;
+  categoryOptions?: AdminCardCategoryProjection[];
 }) {
   const fieldId = (field: string) => `${idPrefix}-${field}`;
   const setField = (field: keyof CardFormState, value: string | boolean) => {
     onChange({ ...form, [field]: value });
   };
+  const selectedCategory = normalizeCategories(form.categories)[0] || "";
   const inputClass =
     "rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-[var(--ink-main)] outline-none focus-visible:border-[var(--accent)]";
 
   return (
     <div className="grid gap-3">
+      {categoryOptions.length > 0 && (
+        <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("categorySelect")}>
+          選擇分類
+          <select
+            id={fieldId("categorySelect")}
+            className={inputClass}
+            value={selectedCategory}
+            onChange={(event) => setField("categories", event.target.value)}
+          >
+            <option value="" disabled>
+              請選擇分類
+            </option>
+            {categoryOptions.map((category) => (
+              <option key={category.id} value={category.key}>
+                {formatCardCategoryName(category)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("categories")}>
         categories（用 | 分隔）
         <input
@@ -1034,11 +1057,13 @@ function CategoryManager({
 
 function EditCardDetails({
   card,
+  categoryOptions,
   onSaved,
   onDeleted,
   onBusyChange,
 }: {
   card: CommunicationCard;
+  categoryOptions: AdminCardCategoryProjection[];
   onSaved: (card: CommunicationCard) => void;
   onDeleted: (id: string) => void;
   onBusyChange: (busy: boolean) => void;
@@ -1113,7 +1138,12 @@ function EditCardDetails({
       </summary>
 
       <form className="grid gap-3 border-t border-[var(--line-main)] p-3" onSubmit={saveCard}>
-        <CardFields form={form} idPrefix={`card-${card.id}`} onChange={setForm} />
+        <CardFields
+          form={form}
+          idPrefix={`card-${card.id}`}
+          categoryOptions={categoryOptions}
+          onChange={setForm}
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           <button type="submit" disabled={isSaving} className="primary-button disabled:opacity-50">
@@ -1356,7 +1386,12 @@ export default function AdminClient() {
         <section className="grid gap-3 rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4">
           <h2 className="text-xl font-extrabold">新增字卡</h2>
           <form className="grid gap-3" onSubmit={createCard}>
-            <CardFields form={newCardForm} idPrefix="new-card" onChange={setNewCardForm} />
+            <CardFields
+              form={newCardForm}
+              idPrefix="new-card"
+              categoryOptions={categories}
+              onChange={setNewCardForm}
+            />
             <div className="flex flex-wrap items-center gap-2">
               <button type="submit" disabled={isLoading} className="primary-button disabled:opacity-50">
                 新增
@@ -1378,6 +1413,7 @@ export default function AdminClient() {
                 <EditCardDetails
                   key={card.id}
                   card={card}
+                  categoryOptions={categories}
                   onSaved={(card) => {
                     mergeCard(card);
                     void loadCards(false);
