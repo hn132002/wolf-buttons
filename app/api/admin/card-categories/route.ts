@@ -1,8 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { parseCategoryCreateInput, projectAdminCardCategories } from "@/lib/cards";
+import {
+  formatCardCategoryName,
+  parseCategoryCreateInput,
+  projectAdminCardCategories,
+} from "@/lib/cards";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +15,6 @@ const categoryOrderBy = [
   { createdAt: "asc" as const },
   { id: "asc" as const },
 ];
-
-const createCategoryKey = () => `category_${randomUUID().replaceAll("-", "")}`;
 
 const isUniqueError = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -55,8 +56,11 @@ export async function POST(request: Request) {
 
     const category = await prisma.$transaction(
       async (tx) => {
+        const categoryKey = formatCardCategoryName(parsed.data);
         const duplicate = await tx.communicationCategory.findFirst({
-          where: { name: parsed.data.name },
+          where: {
+            OR: [{ key: categoryKey }, { name: parsed.data.name }],
+          },
           select: { id: true },
         });
 
@@ -69,7 +73,7 @@ export async function POST(request: Request) {
 
         return tx.communicationCategory.create({
           data: {
-            key: createCategoryKey(),
+            key: categoryKey,
             name: parsed.data.name,
             emoji: parsed.data.emoji,
             sortOrder: (lastCategory?.sortOrder ?? -1) + 1,
