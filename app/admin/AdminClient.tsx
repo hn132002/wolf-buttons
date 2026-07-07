@@ -895,31 +895,24 @@ function CategoryManager({
                   >
                     編輯
                   </button>
-                  <details className="relative">
-                    <summary className="cursor-pointer list-none rounded-md border border-[var(--line-main)] bg-[var(--button-bg)] px-3 py-2 text-center text-sm font-extrabold">
-                      更多
-                    </summary>
-                    <div className="mt-1 grid gap-1 rounded-md border border-[var(--line-main)] bg-[var(--panel-main)] p-2">
-                      <button
-                        type="button"
-                        disabled={disabled || !canDelete}
-                        onClick={() => {
-                          setIsAddingCategory(false);
-                          setEditingId("");
-                          setDeleteTarget(category);
-                          setMessage("");
-                        }}
-                        className="danger-button text-sm disabled:opacity-40"
-                      >
-                        刪除分類
-                      </button>
-                      {!canDelete && (
-                        <p className="text-xs font-bold text-[var(--ink-soft)]">
-                          仍有 {category.cardCount} 張字卡，無法刪除
-                        </p>
-                      )}
-                    </div>
-                  </details>
+                  <button
+                    type="button"
+                    disabled={disabled || !canDelete}
+                    onClick={() => {
+                      setIsAddingCategory(false);
+                      setEditingId("");
+                      setDeleteTarget(category);
+                      setMessage("");
+                    }}
+                    className="danger-button text-sm disabled:opacity-40"
+                  >
+                    刪除
+                  </button>
+                  {!canDelete && (
+                    <p className="text-xs font-bold text-[var(--ink-soft)]">
+                      仍有 {category.cardCount} 張字卡，無法刪除
+                    </p>
+                  )}
                   <label className="inline-flex items-center gap-2 rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-sm font-extrabold">
                     <input
                       type="checkbox"
