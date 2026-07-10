@@ -402,7 +402,6 @@ function CategoryManager({
   const [newCategoryForm, setNewCategoryForm] = useState(emptyCategoryForm);
   const [editingId, setEditingId] = useState("");
   const [editCategoryForm, setEditCategoryForm] = useState(emptyCategoryForm);
-  const [deleteTarget, setDeleteTarget] = useState<AdminCardCategoryProjection | null>(null);
   const [pendingId, setPendingId] = useState("");
   const [message, setMessage] = useState("");
   const [draggingId, setDraggingId] = useState("");
@@ -514,7 +513,6 @@ function CategoryManager({
       await onReloadCards();
       setNewCategoryForm(emptyCategoryForm());
       setIsAddingCategory(false);
-      setDeleteTarget(null);
       setMessage("已新增分類");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "新增分類失敗");
@@ -527,7 +525,6 @@ function CategoryManager({
     if (disabled) return;
 
     setIsAddingCategory(false);
-    setDeleteTarget(null);
     setEditingId(category.id);
     setEditCategoryForm(categoryToForm(category));
     setMessage("");
@@ -564,14 +561,21 @@ function CategoryManager({
     }
   };
 
-  const deleteCategory = async () => {
-    if (!deleteTarget) return;
+  const deleteCategory = async (category: AdminCardCategoryProjection) => {
+    const answer = window.prompt(
+      `這會刪除「${formatCardCategoryName(category)}」，此分類下的字卡會改為${UNCATEGORIZED_CATEGORY_NAME}。請輸入「刪除分類」確認。`
+    );
 
-    setPendingId(deleteTarget.id);
+    if (answer !== "刪除分類") {
+      setMessage("已取消刪除分類");
+      return;
+    }
+
+    setPendingId(category.id);
     setMessage("");
 
     try {
-      const response = await fetch(`/api/admin/card-categories/${deleteTarget.id}`, {
+      const response = await fetch(`/api/admin/card-categories/${category.id}`, {
         method: "DELETE",
       });
 
@@ -584,10 +588,9 @@ function CategoryManager({
       setOrderedCategories((current) =>
         Array.isArray(data.categories)
           ? data.categories
-          : current.filter((category) => category.id !== deleteTarget.id)
+          : current.filter((item) => item.id !== category.id)
       );
       await onReloadCards();
-      setDeleteTarget(null);
       setEditingId("");
       setMessage("分類已刪除");
     } catch (error) {
@@ -742,7 +745,6 @@ function CategoryManager({
           onClick={() => {
             setIsAddingCategory(true);
             setEditingId("");
-            setDeleteTarget(null);
             setMessage("");
           }}
           className="secondary-button disabled:opacity-50"
@@ -877,12 +879,7 @@ function CategoryManager({
                   <button
                     type="button"
                     disabled={disabled}
-                    onClick={() => {
-                      setIsAddingCategory(false);
-                      setEditingId("");
-                      setDeleteTarget(category);
-                      setMessage("");
-                    }}
+                    onClick={() => void deleteCategory(category)}
                     className="danger-button text-sm disabled:opacity-40"
                   >
                     刪除
@@ -977,39 +974,6 @@ function CategoryManager({
               </div>
             );
           })}
-        </div>
-      )}
-
-      {deleteTarget && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="grid gap-3 rounded-md border border-[var(--danger)] bg-[var(--panel-soft)] p-3"
-        >
-          <h3 className="text-lg font-extrabold">
-            刪除「{formatCardCategoryName(deleteTarget)}」？
-          </h3>
-          <p className="text-sm font-bold text-[var(--ink-soft)]">
-            此分類下的字卡會改為{UNCATEGORIZED_CATEGORY_NAME}。刪除後無法復原。
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => setDeleteTarget(null)}
-              className="secondary-button disabled:opacity-50"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => void deleteCategory()}
-              className="danger-button disabled:opacity-50"
-            >
-              {pendingId === deleteTarget.id ? "刪除中" : "刪除分類"}
-            </button>
-          </div>
         </div>
       )}
 
