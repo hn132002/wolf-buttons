@@ -91,20 +91,18 @@ export type BatchPreview = {
   errors: string[];
 };
 
-export const DELETE_ALL_CONFIRMATION = "DELETE_ALL_CARDS";
+export const DELETE_ALL_CONFIRMATION = "DELETE_ALL_CARDS_AND_CATEGORIES";
+export const UNCATEGORIZED_CATEGORY_KEY = "__uncategorized__";
+export const UNCATEGORIZED_CATEGORY_NAME = "未分類";
 
 export const TSV_COLUMNS = [
   "id",
-  "categories",
-  "emoji",
+  "category",
   "label",
   "labelJa",
   "zh",
   "ja",
   "en",
-  "note",
-  "sortOrder",
-  "isVisible",
 ] as const;
 
 type TsvColumn = (typeof TSV_COLUMNS)[number];
@@ -130,6 +128,7 @@ type CategoryOrderParseResult =
   | { ok: false; error: string; status: number };
 
 const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+export const displayText = (value: string | null | undefined) => cleanText(value) || "-";
 const codePointLength = (value: string) => Array.from(value).length;
 
 const hasOwn = (body: Record<string, unknown>, key: string) =>
@@ -155,6 +154,13 @@ export const normalizeCategories = (value: unknown) => {
   );
 };
 
+const normalizeCardCategories = (value: unknown) =>
+  normalizeCategories(value).filter(
+    (category) =>
+      category !== UNCATEGORIZED_CATEGORY_KEY &&
+      category !== UNCATEGORIZED_CATEGORY_NAME
+  );
+
 export const joinCategories = (categories: unknown) =>
   normalizeCategories(categories).join("|");
 
@@ -164,14 +170,24 @@ const collectCardCategories = (
   const counts = new Map<string, number>();
 
   for (const card of cards) {
-    for (const category of normalizeCategories(card.categories)) {
+    const categories = normalizeCategories(card.categories);
+
+    if (categories.length === 0) {
+      counts.set(
+        UNCATEGORIZED_CATEGORY_KEY,
+        (counts.get(UNCATEGORIZED_CATEGORY_KEY) ?? 0) + 1
+      );
+      continue;
+    }
+
+    for (const category of categories) {
       counts.set(category, (counts.get(category) ?? 0) + 1);
     }
   }
 
   return Array.from(counts, ([category, cardCount], sortOrder) => ({
     key: category,
-    name: category,
+    name: category === UNCATEGORIZED_CATEGORY_KEY ? UNCATEGORIZED_CATEGORY_NAME : category,
     emoji: null,
     sortOrder,
     isVisible: true,
@@ -186,7 +202,7 @@ export const getCardCategories = (
 
 export const projectCardCategories = (
   cards: Pick<CommunicationCard, "categories" | "isVisible">[]
-) => collectCardCategories(cards.filter((card) => card.isVisible));
+) => collectCardCategories(cards);
 
 const compareStoredCategories = (a: StoredCardCategory, b: StoredCardCategory) => {
   const createdA = a.createdAt instanceof Date ? a.createdAt.toISOString() : a.createdAt;
@@ -203,7 +219,7 @@ export const projectStoredCardCategories = (
   const counts = new Map<string, number>();
 
   for (const card of cards) {
-    if (!card.isVisible || !Array.isArray(card.categories)) continue;
+    if (!Array.isArray(card.categories)) continue;
 
     for (const category of new Set(card.categories)) {
       if (typeof category !== "string" || !categoryKeys.has(category)) continue;
@@ -225,6 +241,21 @@ export const projectStoredCardCategories = (
       pageCount: Math.ceil(cardCount / 9),
     };
   });
+};
+
+export const projectPublicCardCategories = (
+  categories: StoredCardCategory[],
+  cards: Pick<CommunicationCard, "categories" | "isVisible">[]
+) => {
+  const stored = projectStoredCardCategories(categories, cards).filter(
+    (category) => category.isVisible && category.cardCount > 0
+  );
+  const storedKeys = new Set(categories.map((category) => category.key));
+  const missing = projectCardCategories(cards).filter(
+    (category) => !storedKeys.has(category.key)
+  );
+
+  return [...stored, ...missing];
 };
 
 export const projectAdminCardCategories = (
@@ -254,13 +285,19 @@ export const countCardsByCategoryKey = (
 ) =>
   cards.reduce(
     (count, card) =>
-      Array.isArray(card.categories) && card.categories.includes(key) ? count + 1 : count,
+      Array.isArray(card.categories) &&
+      (key === UNCATEGORIZED_CATEGORY_KEY
+        ? normalizeCategories(card.categories).length === 0
+        : card.categories.includes(key))
+        ? count + 1
+        : count,
     0
   );
 
 export const resolveCardCategoryKeys = (
   inputCategories: unknown,
-  storedCategories: Pick<StoredCardCategory, "key" | "name" | "emoji">[]
+  storedCategories: Pick<StoredCardCategory, "key" | "name" | "emoji">[],
+  options: { allowMissing?: boolean } = {}
 ) => {
   const aliases = new Map<string, string>();
 
@@ -273,10 +310,15 @@ export const resolveCardCategoryKeys = (
   const resolved: string[] = [];
   const missing: string[] = [];
 
-  for (const category of normalizeCategories(inputCategories)) {
+  for (const category of normalizeCardCategories(inputCategories)) {
     const key = aliases.get(category);
 
     if (!key) {
+      if (options.allowMissing) {
+        if (!resolved.includes(category)) resolved.push(category);
+        continue;
+      }
+
       missing.push(category);
       continue;
     }
@@ -286,10 +328,6 @@ export const resolveCardCategoryKeys = (
 
   if (missing.length > 0) {
     return { ok: false as const, error: `找不到分類：${missing.join("、")}`, status: 400 };
-  }
-
-  if (resolved.length === 0) {
-    return { ok: false as const, error: "分類至少要有一個", status: 400 };
   }
 
   return { ok: true as const, categories: resolved };
@@ -517,7 +555,7 @@ export const serializeCard = (card: {
     card.updatedAt instanceof Date ? card.updatedAt.toISOString() : card.updatedAt,
 });
 
-const readRequiredText = (
+const readText = (
   body: Record<string, unknown>,
   key: "emoji" | "label" | "zh" | "ja",
   label: string,
@@ -528,7 +566,6 @@ const readRequiredText = (
 
   const value = cleanText(body[key]);
 
-  if (!value) return { ok: false, error: `${label}必填`, status: 400 };
   if (value.length > maxLength) {
     return { ok: false, error: `${label}最多 ${maxLength} 字`, status: 400 };
   }
@@ -547,10 +584,10 @@ export const parseCardInput = (
   const source = body as Record<string, unknown>;
   const partial = options.partial === true;
   const data: CardWriteData = {};
-  const emoji = readRequiredText(source, "emoji", "Emoji", 16, partial);
-  const label = readRequiredText(source, "label", "Label", 24, partial);
-  const zh = readRequiredText(source, "zh", "中文", 240, partial);
-  const ja = readRequiredText(source, "ja", "日文", 240, partial);
+  const emoji = readText(source, "emoji", "Emoji", 16, partial);
+  const label = readText(source, "label", "Label", 24, partial);
+  const zh = readText(source, "zh", "中文", 240, partial);
+  const ja = readText(source, "ja", "日文", 240, partial);
 
   for (const result of [emoji, label, zh, ja]) {
     if (typeof result === "object") return result;
@@ -586,11 +623,7 @@ export const parseCardInput = (
   }
 
   if (!partial || hasOwn(source, "categories")) {
-    const categories = normalizeCategories(source.categories);
-
-    if (categories.length === 0) {
-      return { ok: false, error: "分類至少要有一個", status: 400 };
-    }
+    const categories = normalizeCardCategories(source.categories);
 
     data.categories = categories;
   }
@@ -606,11 +639,7 @@ export const parseCardInput = (
   }
 
   if (hasOwn(source, "isVisible")) {
-    if (typeof source.isVisible !== "boolean") {
-      return { ok: false, error: "顯示狀態格式不正確", status: 400 };
-    }
-
-    data.isVisible = source.isVisible;
+    return { ok: false, error: "單張字卡不支援隱藏，請使用分類隱藏", status: 400 };
   }
 
   if (partial && Object.keys(data).length === 0) {
@@ -630,15 +659,11 @@ export const exportCardsToTsv = (cards: CommunicationCard[]) => {
     [
       card.id,
       joinCategories(card.categories),
-      card.emoji,
       card.label,
       card.labelJa || "",
       card.zh,
       card.ja,
       card.en || "",
-      card.note || "",
-      card.sortOrder,
-      card.isVisible ? "TRUE" : "FALSE",
     ]
       .map(cleanTsvCell)
       .join("\t")
@@ -658,8 +683,7 @@ export const parseTsvBoolean = (value: string) => {
 
 const pushBatchRow = (
   preview: BatchPreview,
-  row: BatchCardRow,
-  existingCards: Map<string, CommunicationCard>
+  row: BatchCardRow
 ) => {
   preview.rows.push(row);
 
@@ -669,12 +693,6 @@ const pushBatchRow = (
   }
 
   preview.updates.push(row);
-
-  if (!row.isVisible) {
-    preview.hides.push(row);
-  } else if (existingCards.get(row.id)?.isVisible === false) {
-    preview.shows.push(row);
-  }
 };
 
 const addReplaceDeletes = (
@@ -726,27 +744,14 @@ export const parseBatchTsv = (
     const value = (column: TsvColumn) =>
       (cells[TSV_COLUMNS.indexOf(column)] ?? "").trim();
     const id = value("id");
-    const categories = normalizeCategories(value("categories"));
-    const sortOrderText = value("sortOrder");
-    const sortOrder = Number(sortOrderText);
-    const isVisible = parseTsvBoolean(value("isVisible"));
+    const categories = normalizeCardCategories(value("category"));
     const rowErrors: string[] = [];
 
     if (cells.length !== TSV_COLUMNS.length) rowErrors.push("欄位數量不正確");
-    if (categories.length === 0) rowErrors.push("缺少 categories");
-    if (!value("emoji")) rowErrors.push("缺少 emoji");
-    if (!value("label")) rowErrors.push("缺少 label");
-    if (!value("zh")) rowErrors.push("缺少 zh");
-    if (!value("ja")) rowErrors.push("缺少 ja");
-    if (!sortOrderText || !Number.isInteger(sortOrder)) {
-      rowErrors.push("sortOrder 必須是整數");
-    }
-    if (isVisible === null) rowErrors.push("isVisible 必須是 TRUE / FALSE / 1 / 0");
-    if (!id && isVisible === false) rowErrors.push("新增字卡不可直接設為隱藏");
     if (id && !existingCards.has(id)) rowErrors.push("id 不存在，無法更新");
     if (id && seenIds.has(id)) rowErrors.push("id 重複");
 
-    if (rowErrors.length > 0 || isVisible === null) {
+    if (rowErrors.length > 0) {
       preview.errors.push(...rowErrors.map((error) => `第 ${lineNumber} 列：${error}`));
       return;
     }
@@ -761,17 +766,16 @@ export const parseBatchTsv = (
       {
         id,
         categories,
-        emoji: value("emoji"),
+        emoji: "",
         label: value("label"),
         labelJa: value("labelJa"),
         zh: value("zh"),
         ja: value("ja"),
         en: value("en"),
-        note: value("note"),
-        sortOrder,
-        isVisible,
-      },
-      existingCards
+        note: "",
+        sortOrder: existingCards.get(id)?.sortOrder ?? index,
+        isVisible: true,
+      }
     );
   });
 
@@ -783,7 +787,8 @@ export const parseBatchTsv = (
 export const previewBatchRows = (
   rows: unknown,
   cards: CommunicationCard[],
-  mode: BatchApplyMode
+  mode: BatchApplyMode,
+  storedCategories?: Pick<StoredCardCategory, "key" | "name" | "emoji">[]
 ): BatchPreview => {
   const preview = emptyPreview();
 
@@ -793,6 +798,15 @@ export const previewBatchRows = (
   }
 
   const existingCards = new Map(cards.map((card) => [card.id, card]));
+  const categoryAliases = storedCategories
+    ? new Map(
+        storedCategories.flatMap((category) =>
+          [category.key, category.name, formatCardCategoryName(category)]
+            .filter(Boolean)
+            .map((alias) => [alias, category.key] as const)
+        )
+      )
+    : null;
   const inputIds = new Set<string>();
   const seenIds = new Set<string>();
   preview.totalRows = rows.length;
@@ -822,30 +836,21 @@ export const previewBatchRows = (
       return value.trim();
     };
     const id = readString("id");
-    const categories = normalizeCategories(source.categories);
-    const emoji = readString("emoji");
+    const categories = normalizeCardCategories(source.categories ?? source.category);
     const label = readString("label");
     const labelJa = readString("labelJa");
     const zh = readString("zh");
     const ja = readString("ja");
     const en = readString("en");
-    const note = readString("note");
-    const { sortOrder, isVisible } = source;
 
-    if (categories.length === 0) rowErrors.push("缺少 categories");
-    if (!emoji) rowErrors.push("缺少 emoji");
-    if (!label) rowErrors.push("缺少 label");
-    if (!zh) rowErrors.push("缺少 zh");
-    if (!ja) rowErrors.push("缺少 ja");
-    if (typeof sortOrder !== "number" || !Number.isInteger(sortOrder)) {
-      rowErrors.push("sortOrder 必須是整數");
-    }
-    if (typeof isVisible !== "boolean") rowErrors.push("isVisible 必須是布林值");
-    if (!id && isVisible === false) rowErrors.push("新增字卡不可直接設為隱藏");
     if (id && !existingCards.has(id)) rowErrors.push("id 不存在，無法更新");
     if (id && seenIds.has(id)) rowErrors.push("id 重複");
 
-    if (rowErrors.length > 0 || typeof sortOrder !== "number" || typeof isVisible !== "boolean") {
+    const resolvedCategories = categoryAliases
+      ? Array.from(new Set(categories.map((category) => categoryAliases.get(category) ?? category)))
+      : categories;
+
+    if (rowErrors.length > 0) {
       preview.errors.push(...rowErrors.map((error) => `第 ${lineNumber} 列：${error}`));
       return;
     }
@@ -859,18 +864,17 @@ export const previewBatchRows = (
       preview,
       {
         id,
-        categories,
-        emoji,
+        categories: resolvedCategories,
+        emoji: "",
         label,
         labelJa,
         zh,
         ja,
         en,
-        note,
-        sortOrder,
-        isVisible,
-      },
-      existingCards
+        note: "",
+        sortOrder: existingCards.get(id)?.sortOrder ?? index,
+        isVisible: true,
+      }
     );
   });
 
@@ -889,5 +893,5 @@ export const batchRowToPayload = (row: BatchCardRow): CardWriteData => ({
   en: row.en || null,
   note: row.note || null,
   sortOrder: row.sortOrder,
-  isVisible: row.isVisible,
+  isVisible: true,
 });

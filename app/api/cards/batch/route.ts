@@ -50,20 +50,59 @@ export async function POST(request: Request) {
       );
     }
 
-    const existing = sortCards(
-      (
-        await prisma.communicationCard.findMany({
-          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-        })
-      ).map(serializeCard)
-    );
-    const preview = previewBatchRows(body.cards, existing, body.mode);
+    const [cards, categories] = await Promise.all([
+      prisma.communicationCard.findMany({
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      }),
+      prisma.communicationCategory.findMany({
+        select: { key: true, name: true, emoji: true },
+      }),
+    ]);
+    const existing = sortCards(cards.map(serializeCard));
+    const preview = previewBatchRows(body.cards, existing, body.mode, categories);
 
     if (preview.errors.length > 0) {
       return NextResponse.json({ errors: preview.errors }, { status: 400 });
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      const categoryKeys = Array.from(
+        new Set(preview.rows.flatMap((row) => row.categories))
+      );
+      let createdCategories = 0;
+
+      if (categoryKeys.length > 0) {
+        const existingCategories = await tx.communicationCategory.findMany({
+          where: { key: { in: categoryKeys } },
+          select: { key: true },
+        });
+        const existingCategoryKeys = new Set(
+          existingCategories.map((category) => category.key)
+        );
+        const missingCategoryKeys = categoryKeys.filter(
+          (category) => !existingCategoryKeys.has(category)
+        );
+        createdCategories = missingCategoryKeys.length;
+        const lastCategory = missingCategoryKeys.length
+          ? await tx.communicationCategory.findFirst({
+              orderBy: { sortOrder: "desc" },
+              select: { sortOrder: true },
+            })
+          : null;
+
+        for (const [index, key] of missingCategoryKeys.entries()) {
+          await tx.communicationCategory.create({
+            data: {
+              key,
+              name: key,
+              emoji: null,
+              sortOrder: (lastCategory?.sortOrder ?? -1) + index + 1,
+              isVisible: true,
+            },
+          });
+        }
+      }
+
       if (preview.creates.length > 0) {
         await tx.communicationCard.createMany({
           data: preview.creates.map(createData),
@@ -89,6 +128,7 @@ export async function POST(request: Request) {
         hidden: preview.hides.length,
         shown: preview.shows.length,
         deleted: body.mode === "replace" ? preview.replaceDeletes.length : 0,
+        createdCategories,
       };
     }, { timeout: 20_000 });
 

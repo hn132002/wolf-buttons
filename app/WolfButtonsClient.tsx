@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import DrawingOverlay from "@/app/DrawingOverlay";
 import {
+  UNCATEGORIZED_CATEGORY_KEY,
+  displayText,
   formatCardCategoryName,
   sortCards,
   type CardCategoriesResponse,
@@ -39,7 +41,7 @@ const text = {
 } satisfies Record<UiLanguage, Record<string, string>>;
 
 const getCardButtonLabel = (card: CommunicationCard, uiLanguage: UiLanguage) =>
-  uiLanguage === "ja" ? card.labelJa || card.label : card.label;
+  displayText(uiLanguage === "ja" ? card.labelJa || card.label : card.label || card.labelJa);
 
 export default function WolfButtonsClient({ initialCards, initialCategories }: Props) {
   const [cards, setCards] = useState(() => sortCards(initialCards));
@@ -48,21 +50,40 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
   const [activeCategory, setActiveCategory] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("zh");
   const [isDrawing, setIsDrawing] = useState(false);
-  const visibleCards = useMemo(
-    () => sortCards(cards.filter((card) => card.isVisible)),
-    [cards]
-  );
   const visibleCategories = useMemo(
     () =>
       categoryProjections
         .filter((category) => category.isVisible),
     [categoryProjections]
   );
+  const visibleCategoryKeys = useMemo(
+    () => new Set(visibleCategories.map((category) => category.key)),
+    [visibleCategories]
+  );
+  const visibleCards = useMemo(
+    () =>
+      sortCards(
+        cards.filter((card) => {
+          const categories = Array.isArray(card.categories) ? card.categories : [];
+
+          if (categories.length === 0) {
+            return visibleCategoryKeys.has(UNCATEGORIZED_CATEGORY_KEY);
+          }
+
+          return categories.some((category) => visibleCategoryKeys.has(category));
+        })
+      ),
+    [cards, visibleCategoryKeys]
+  );
   const displayedCategory = visibleCategories.some((category) => category.key === activeCategory)
     ? activeCategory
     : visibleCategories[0]?.key || "";
   const categoryCards = displayedCategory
-    ? visibleCards.filter((card) => card.categories.includes(displayedCategory))
+    ? visibleCards.filter((card) =>
+        displayedCategory === UNCATEGORIZED_CATEGORY_KEY
+          ? card.categories.length === 0
+          : card.categories.includes(displayedCategory)
+      )
     : [];
   const selectedCard =
     visibleCards.find((card) => card.id === selectedCardId) || null;
@@ -124,32 +145,22 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
     <main className="h-[100dvh] overflow-hidden px-3 py-3 text-[var(--ink-main)] sm:px-4">
       <h1 className="sr-only">狼狼按鈕</h1>
       <div className="app-shell mx-auto flex h-full min-h-0 flex-col gap-3">
-        <div className="relative min-h-[190px] flex-1">
+        <div className="relative h-[190px] shrink-0">
           <section
             className="display-panel h-full overflow-y-auto rounded-lg border border-[var(--line-main)] bg-[var(--panel-main)] p-4"
             aria-live="polite"
           >
             {selectedCard ? (
               <div className="grid gap-3">
-                <div className="text-center text-5xl leading-none" aria-hidden="true">
-                  {selectedCard.emoji}
-                </div>
                 <p className="break-words text-center text-2xl font-black leading-snug">
-                  {selectedCard.zh}
+                  {displayText(selectedCard.zh)}
                 </p>
                 <p className="break-words text-center text-xl font-extrabold leading-snug text-[var(--ink-main)]">
-                  {selectedCard.ja}
+                  {displayText(selectedCard.ja)}
                 </p>
-                {selectedCard.en && (
-                  <p className="break-words text-center text-base font-bold leading-snug text-[var(--ink-soft)]">
-                    {selectedCard.en}
-                  </p>
-                )}
-                {selectedCard.note && (
-                  <p className="rounded-md border border-[var(--line-soft)] bg-[var(--panel-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-soft)]">
-                    {selectedCard.note}
-                  </p>
-                )}
+                <p className="break-words text-center text-base font-bold leading-snug text-[var(--ink-soft)]">
+                  {displayText(selectedCard.en)}
+                </p>
               </div>
             ) : (
               <div className="grid min-h-[150px] place-items-center text-center">
@@ -231,7 +242,7 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
           </nav>
         )}
 
-        <div className="h-[244px] min-w-0 shrink-0 overflow-y-auto overflow-x-hidden">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
           {categoryCards.length > 0 ? (
             <section className="grid w-full min-w-0 grid-cols-3 gap-2 auto-rows-[76px]" aria-label="字卡按鈕">
               {categoryCards.map((card) => {
@@ -248,10 +259,7 @@ export default function WolfButtonsClient({ initialCards, initialCategories }: P
                         : "border-[var(--line-main)] bg-[var(--button-bg)] text-[var(--ink-main)]"
                     }`}
                   >
-                    <span className="block text-2xl leading-none" aria-hidden="true">
-                      {card.emoji}
-                    </span>
-                    <span className="mt-1 block break-words text-sm leading-tight">
+                    <span className="block break-words text-base leading-tight">
                       {getCardButtonLabel(card, uiLanguage)}
                     </span>
                   </button>

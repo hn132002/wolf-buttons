@@ -87,12 +87,18 @@ export async function DELETE(request: Request, context: RouteContext) {
 
         if (!category) return { status: 404 as const };
 
-        const cardCount = await tx.communicationCard.count({
+        const cards = await tx.communicationCard.findMany({
           where: { categories: { has: category.key } },
+          select: { id: true, categories: true },
         });
 
-        if (cardCount > 0) {
-          return { status: 409 as const, cardCount };
+        for (const card of cards) {
+          await tx.communicationCard.update({
+            where: { id: card.id },
+            data: {
+              categories: card.categories.filter((key) => key !== category.key),
+            },
+          });
         }
 
         await tx.communicationCategory.delete({ where: { id } });
@@ -118,17 +124,6 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     if (result.status === 404) {
       return NextResponse.json({ error: "找不到分類" }, { status: 404 });
-    }
-
-    if (result.status === 409) {
-      return NextResponse.json(
-        {
-          error: "CATEGORY_NOT_EMPTY",
-          message: "此分類仍有字卡，無法刪除。",
-          cardCount: result.cardCount,
-        },
-        { status: 409 }
-      );
     }
 
     const cards = await prisma.communicationCard.findMany({

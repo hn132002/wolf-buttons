@@ -12,6 +12,9 @@
 - `PATCH /api/cards/[id]`：admin-only 修改單張。
 - `DELETE /api/cards/[id]`：admin-only hard delete。
 - `POST /api/cards/batch`：admin-only 批次 upsert / replace。
+- `GET /api/card-categories`：公開讀取未隱藏分類與虛擬未分類。
+- `/api/admin/card-categories/*`：admin-only 管理分類、隱藏與排序。
+- `DELETE /api/admin/card-categories/[id]/cards`：admin-only hard delete 該分類下全部字卡。
 
 不建立 `/okinawa`、`/okinawa?edit=1`、`/api/okinawa/*`，也不依賴 ephemeral-board。
 
@@ -20,16 +23,16 @@
 `CommunicationCard`：
 
 - `id String @id @default(cuid())`
-- `emoji String`
-- `label String`
+- `emoji String`：保留舊欄位，新流程固定空字串。
+- `label String`：按鈕中文，可空白。
 - `labelJa String?`
-- `zh String`
-- `ja String`
+- `zh String`：內文中文，可空白。
+- `ja String`：內文日文，可空白。
 - `en String?`
-- `note String?`
+- `note String?`：保留舊欄位，新流程固定 null。
 - `categories String[]`
-- `sortOrder Int @default(0)`
-- `isVisible Boolean @default(true)`
+- `sortOrder Int @default(0)`：保留舊欄位。
+- `isVisible Boolean @default(true)`：保留舊欄位；單張字卡不再提供隱藏功能。
 - `createdAt DateTime @default(now())`
 - `updatedAt DateTime @updatedAt`
 
@@ -44,22 +47,22 @@
 - `aria-live="polite"`。
 - 切語言不改展示順序，不隱藏另一種語言。
 - 切分類不自動選卡、不改目前展示訊息。
-- 只顯示 `isVisible=true`。
+- 單張字卡不做隱藏；分類隱藏時，該分類與其字卡不出現在使用者端。
 
 ## 介面語言
 
 - 支援中文與日本語。
-- 中文按鈕顯示 `emoji + label`。
-- 日本語按鈕顯示 `emoji + labelJa`，空白時 fallback `label`。
+- 中文按鈕顯示 `label`，空白時 fallback `labelJa`，仍空白顯示 `-`。
+- 日本語按鈕顯示 `labelJa`，空白時 fallback `label`，仍空白顯示 `-`。
 - UI 語言存在 `localStorage` key `wolfButtons.uiLanguage`，只存 `zh` / `ja`。
 - 分類名稱不翻譯。
 
 ## 分類規則
 
-- 分類來自字卡 `categories`，不寫死、不翻譯、不設上限。
-- 依排序後字卡中第一次出現的順序顯示。
-- 清理空字串，同名分類不重複。
-- TSV categories 用 `|` 分隔。
+- 分類由 `CommunicationCategory` 管理，可新增、刪除、改名、排序、隱藏。
+- 字卡沒有分類時，公開端以虛擬「未分類」顯示；未分類不寫入分類資料表。
+- 刪除單一分類時，該分類下字卡改為未分類。
+- 分類隱藏時，公開端隱藏分類與該分類下字卡；管理端仍可編輯。
 
 ## 管理驗證
 
@@ -74,39 +77,36 @@
 
 ## 管理功能
 
-- 字卡總覽包含 hidden cards。
-- 單張新增、編輯、顯示/隱藏、hard delete。
-- 單張表單欄位：categories、emoji、label、labelJa、zh、ja、en、note、sortOrder、isVisible。
-- 必填：categories 至少一項、emoji、label、zh、ja。
-- 可空：labelJa、en、note。
-- `sortOrder` 必須為整數。
-- DELETE 是 hard delete，不使用 `?hard=1`；隱藏只用 `PATCH isVisible=false`。
+- 字卡總覽包含全部字卡。
+- 單張新增、編輯、hard delete。
+- 單張表單欄位：category、label、labelJa、zh、ja、en。
+- 單張新增/編輯可直接輸入新分類；不存在的分類會自動建立。
+- 文字欄位皆可空白；畫面空白顯示 `-`。
+- 單張字卡不支援隱藏；隱藏只在分類層級。
+- 可 hard delete 單一分類下全部字卡，分類本身保留。
+- 「全部字卡與分類刪除」會 hard delete 全部字卡與全部分類。
 
 ## TSV 格式
 
 固定 header：
 
 ```tsv
-id	categories	emoji	label	labelJa	zh	ja	en	note	sortOrder	isVisible
+id	category	label	labelJa	zh	ja	en
 ```
 
-- 匯出全部字卡，包含 hidden。
-- categories 用 `|` 分隔。
-- `isVisible` 輸出 `TRUE` / `FALSE`。
+- 匯出全部字卡。
+- category 可空白；空白或 `未分類` 都視為未分類。
 - null 輸出空字串。
-- 匯入 boolean 接受 `TRUE`、`FALSE`、`true`、`false`、`1`、`0`。
 - 匯入前必須解析預覽，有錯誤不得套用。
-- 預覽顯示總列數、新增、更新、隱藏、顯示、刪除、錯誤與逐列錯誤。
+- 預覽顯示總列數、新增、更新、刪除、錯誤與逐列錯誤。
 
 ## 增加／修改模式
 
 API mode 為 `upsert`。
 
-- id 空白且 `isVisible=true`：新增。
+- id 空白：新增。
 - id 有值且存在：更新該卡所有 TSV 欄位。
 - id 有值但不存在：錯誤。
-- id 空白且 `isVisible=false`：錯誤。
-- `isVisible=false`：保留資料但隱藏。
 - TSV 未出現的既有卡完全不動。
 - 整批操作在 transaction 內完成。
 
@@ -118,14 +118,13 @@ API mode 為 `replace`。
 - id 空白：新增。
 - id 有值且存在：更新。
 - id 有值但不存在：錯誤。
-- `isVisible=false`：保留但隱藏。
 - 既有 DB 字卡未出現在 TSV：hard delete。
 - 套用前二次確認：「TSV 未包含的既有字卡會直接刪除，且無法復原。」
 - 整批操作在 transaction 內完成。
 
 ## API 安全
 
-- 公開 GET 不需要 admin secret，只回傳 `isVisible=true`。
+- 公開 GET 不需要 admin secret。
 - includeHidden、POST、PATCH、DELETE、batch 都是 admin-only。
 - 回應不包含 server secret。
 - DB 錯誤只回一般化訊息，不輸出連線資訊。

@@ -32,11 +32,15 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
 
+    let missingKeys: string[] = [];
+
     if (parsed.data.categories) {
       const categories = await prisma.communicationCategory.findMany({
         select: { key: true, name: true, emoji: true },
       });
-      const resolvedCategories = resolveCardCategoryKeys(parsed.data.categories, categories);
+      const resolvedCategories = resolveCardCategoryKeys(parsed.data.categories, categories, {
+        allowMissing: true,
+      });
 
       if (!resolvedCategories.ok) {
         return NextResponse.json(
@@ -45,12 +49,36 @@ export async function PATCH(request: Request, context: RouteContext) {
         );
       }
 
+      const existingKeys = new Set(categories.map((category) => category.key));
+      missingKeys = resolvedCategories.categories.filter(
+        (category) => !existingKeys.has(category)
+      );
       parsed.data.categories = resolvedCategories.categories;
     }
 
-    const card = await prisma.communicationCard.update({
-      where: { id },
-      data: parsed.data,
+    const card = await prisma.$transaction(async (tx) => {
+      if (missingKeys.length > 0) {
+        const lastCategory = await tx.communicationCategory.findFirst({
+          orderBy: { sortOrder: "desc" },
+          select: { sortOrder: true },
+        });
+
+        await tx.communicationCategory.createMany({
+          data: missingKeys.map((key, index) => ({
+            key,
+            name: key,
+            emoji: null,
+            sortOrder: (lastCategory?.sortOrder ?? -1) + index + 1,
+            isVisible: true,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return tx.communicationCard.update({
+        where: { id },
+        data: parsed.data,
+      });
     });
 
     return NextResponse.json(serializeCard(card));

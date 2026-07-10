@@ -12,6 +12,8 @@ import {
 } from "react";
 import {
   DELETE_ALL_CONFIRMATION,
+  UNCATEGORIZED_CATEGORY_NAME,
+  displayText,
   exportCardsToTsv,
   formatCardCategoryName,
   normalizeCategories,
@@ -28,15 +30,11 @@ import {
 
 type CardFormState = {
   categories: string;
-  emoji: string;
   label: string;
   labelJa: string;
   zh: string;
   ja: string;
   en: string;
-  note: string;
-  sortOrder: string;
-  isVisible: boolean;
 };
 
 type CategoryFormState = {
@@ -45,16 +43,12 @@ type CategoryFormState = {
 };
 
 const emptyForm = (): CardFormState => ({
-  categories: "常用",
-  emoji: "",
+  categories: "",
   label: "",
   labelJa: "",
   zh: "",
   ja: "",
   en: "",
-  note: "",
-  sortOrder: "0",
-  isVisible: true,
 });
 
 const emptyCategoryForm = (): CategoryFormState => ({
@@ -66,28 +60,22 @@ const jsonHeaders: HeadersInit = { "Content-Type": "application/json" };
 
 const cardToForm = (card: CommunicationCard): CardFormState => ({
   categories: card.categories.join("|"),
-  emoji: card.emoji,
   label: card.label,
   labelJa: card.labelJa || "",
   zh: card.zh,
   ja: card.ja,
   en: card.en || "",
-  note: card.note || "",
-  sortOrder: String(card.sortOrder),
-  isVisible: card.isVisible,
 });
 
 const formToPayload = (form: CardFormState): CardWriteData => ({
   categories: normalizeCategories(form.categories),
-  emoji: form.emoji.trim(),
+  emoji: "",
   label: form.label.trim(),
   labelJa: form.labelJa.trim() || null,
   zh: form.zh.trim(),
   ja: form.ja.trim(),
   en: form.en.trim() || null,
-  note: form.note.trim() || null,
-  sortOrder: Number(form.sortOrder),
-  isVisible: form.isVisible,
+  note: null,
 });
 
 const categoryToForm = (category: AdminCardCategoryProjection): CategoryFormState => ({
@@ -139,59 +127,37 @@ function CardFields({
   categoryOptions?: AdminCardCategoryProjection[];
 }) {
   const fieldId = (field: string) => `${idPrefix}-${field}`;
-  const setField = (field: keyof CardFormState, value: string | boolean) => {
+  const setField = (field: keyof CardFormState, value: string) => {
     onChange({ ...form, [field]: value });
   };
   const selectedCategory = normalizeCategories(form.categories)[0] || "";
+  const categoryListId = fieldId("categoryList");
   const inputClass =
     "rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-[var(--ink-main)] outline-none focus-visible:border-[var(--accent)]";
 
   return (
     <div className="grid gap-3">
-      {categoryOptions.length > 0 && (
-        <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("categorySelect")}>
-          選擇分類
-          <select
-            id={fieldId("categorySelect")}
-            className={inputClass}
-            value={selectedCategory}
-            onChange={(event) => setField("categories", event.target.value)}
-          >
-            <option value="" disabled>
-              請選擇分類
-            </option>
-            {categoryOptions.map((category) => (
-              <option key={category.id} value={category.key}>
-                {formatCardCategoryName(category)}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("categories")}>
-        categories（用 | 分隔）
+      <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("category")}>
+        分類
         <input
-          id={fieldId("categories")}
+          id={fieldId("category")}
+          list={categoryListId}
           className={inputClass}
-          value={form.categories}
+          value={selectedCategory}
           onChange={(event) => setField("categories", event.target.value)}
         />
+        <datalist id={categoryListId}>
+          {categoryOptions.map((category) => (
+            <option key={category.id} value={category.key}>
+              {formatCardCategoryName(category)}
+            </option>
+          ))}
+        </datalist>
       </label>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("emoji")}>
-          emoji
-          <input
-            id={fieldId("emoji")}
-            className={inputClass}
-            value={form.emoji}
-            maxLength={16}
-            onChange={(event) => setField("emoji", event.target.value)}
-          />
-        </label>
-
         <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("label")}>
-          label
+          按鈕中文
           <input
             id={fieldId("label")}
             className={inputClass}
@@ -202,7 +168,7 @@ function CardFields({
         </label>
 
         <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("labelJa")}>
-          labelJa
+          按鈕日文
           <input
             id={fieldId("labelJa")}
             className={inputClass}
@@ -211,22 +177,10 @@ function CardFields({
             onChange={(event) => setField("labelJa", event.target.value)}
           />
         </label>
-
-        <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("sortOrder")}>
-          sortOrder
-          <input
-            id={fieldId("sortOrder")}
-            type="number"
-            step="1"
-            className={inputClass}
-            value={form.sortOrder}
-            onChange={(event) => setField("sortOrder", event.target.value)}
-          />
-        </label>
       </div>
 
       <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("zh")}>
-        zh
+        內文中文
         <textarea
           id={fieldId("zh")}
           className={`${inputClass} min-h-20`}
@@ -236,7 +190,7 @@ function CardFields({
       </label>
 
       <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("ja")}>
-        ja
+        內文日文
         <textarea
           id={fieldId("ja")}
           className={`${inputClass} min-h-20`}
@@ -246,32 +200,13 @@ function CardFields({
       </label>
 
       <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("en")}>
-        en
+        內文英文
         <textarea
           id={fieldId("en")}
           className={`${inputClass} min-h-16`}
           value={form.en}
           onChange={(event) => setField("en", event.target.value)}
         />
-      </label>
-
-      <label className="grid gap-1 text-sm font-bold text-[var(--ink-soft)]" htmlFor={fieldId("note")}>
-        note
-        <textarea
-          id={fieldId("note")}
-          className={`${inputClass} min-h-16`}
-          value={form.note}
-          onChange={(event) => setField("note", event.target.value)}
-        />
-      </label>
-
-      <label className="inline-flex items-center gap-2 text-sm font-bold text-[var(--ink-main)]">
-        <input
-          type="checkbox"
-          checked={form.isVisible}
-          onChange={(event) => setField("isVisible", event.target.checked)}
-        />
-        顯示這張字卡
       </label>
     </div>
   );
@@ -300,8 +235,6 @@ function BatchManager({
             `總列數 ${preview.totalRows}`,
             `新增 ${preview.creates.length}`,
             `更新 ${preview.updates.length}`,
-            `隱藏 ${preview.hides.length}`,
-            `顯示 ${preview.shows.length}`,
             `刪除 ${applyMode === "replace" ? preview.replaceDeletes.length : 0}`,
             `錯誤 ${preview.errors.length}`,
           ]
@@ -353,15 +286,14 @@ function BatchManager({
       const result = (await response.json()) as {
         created: number;
         updated: number;
-        hidden: number;
-        shown: number;
         deleted: number;
+        createdCategories?: number;
       };
 
       await onReloadCards();
       setPreview(null);
       setMessage(
-        `已新增 ${result.created} 張、更新 ${result.updated} 張、隱藏 ${result.hidden} 張、顯示 ${result.shown} 張、因取代而刪除 ${result.deleted} 張`
+        `已新增 ${result.created} 張、更新 ${result.updated} 張、新增分類 ${result.createdCategories ?? 0} 個、因取代而刪除 ${result.deleted} 張`
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "套用失敗");
@@ -453,10 +385,12 @@ function BatchManager({
 }
 
 function CategoryManager({
+  cards,
   categories,
   onReloadCards,
   isBusy,
 }: {
+  cards: CommunicationCard[];
   categories: AdminCardCategoryProjection[];
   onReloadCards: () => Promise<void>;
   isBusy: boolean;
@@ -663,6 +597,41 @@ function CategoryManager({
     }
   };
 
+  const deleteCategoryCards = async (
+    category: AdminCardCategoryProjection,
+    cardCount: number
+  ) => {
+    if (cardCount === 0) return;
+
+    const answer = window.prompt(
+      `這會永久刪除「${formatCardCategoryName(category)}」下的 ${cardCount} 張字卡，分類本身會保留。請輸入「刪除此分類字卡」確認。`
+    );
+
+    if (answer !== "刪除此分類字卡") {
+      setMessage("已取消刪除分類字卡");
+      return;
+    }
+
+    setPendingId(`${category.id}:cards`);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/admin/card-categories/${category.id}/cards`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const result = (await response.json()) as { deleted: number };
+      await onReloadCards();
+      setMessage(`已刪除 ${result.deleted} 張字卡`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "刪除分類字卡失敗");
+    } finally {
+      setPendingId("");
+    }
+  };
+
   const startDragging = () => {
     if (!dragRef.current) return;
 
@@ -847,7 +816,9 @@ function CategoryManager({
           {orderedCategories.map((category, index) => {
             const isPending = pendingId === category.id;
             const isDragging = draggingId === category.id;
-            const canDelete = category.cardCount === 0;
+            const categoryCardCount = cards.filter((card) =>
+              card.categories.includes(category.key)
+            ).length;
 
             return (
               <div
@@ -897,7 +868,15 @@ function CategoryManager({
                   </button>
                   <button
                     type="button"
-                    disabled={disabled || !canDelete}
+                    disabled={disabled || categoryCardCount === 0}
+                    onClick={() => void deleteCategoryCards(category, categoryCardCount)}
+                    className="danger-button text-sm disabled:opacity-40"
+                  >
+                    刪除此分類字卡
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabled}
                     onClick={() => {
                       setIsAddingCategory(false);
                       setEditingId("");
@@ -908,11 +887,6 @@ function CategoryManager({
                   >
                     刪除
                   </button>
-                  {!canDelete && (
-                    <p className="text-xs font-bold text-[var(--ink-soft)]">
-                      仍有 {category.cardCount} 張字卡，無法刪除
-                    </p>
-                  )}
                   <label className="inline-flex items-center gap-2 rounded-md border border-[var(--line-main)] bg-[var(--input-bg)] px-3 py-2 text-sm font-extrabold">
                     <input
                       type="checkbox"
@@ -1016,7 +990,7 @@ function CategoryManager({
             刪除「{formatCardCategoryName(deleteTarget)}」？
           </h3>
           <p className="text-sm font-bold text-[var(--ink-soft)]">
-            此分類目前沒有字卡。刪除後無法復原。
+            此分類下的字卡會改為{UNCATEGORIZED_CATEGORY_NAME}。刪除後無法復原。
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -1120,11 +1094,10 @@ function EditCardDetails({
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-3 py-3">
         <span className="min-w-0">
           <span className="break-words font-extrabold">
-            {card.emoji} {card.label}
+            {displayText(card.label)} / {displayText(card.labelJa)}
           </span>
           <span className="mt-1 block break-words text-xs font-bold text-[var(--ink-soft)]">
-            {card.categories.join(" / ")} · {card.sortOrder} ·{" "}
-            {card.isVisible ? "顯示" : "隱藏"}
+            {card.categories[0] || UNCATEGORIZED_CATEGORY_NAME}
           </span>
         </span>
         <span className="shrink-0 text-xs font-bold text-[var(--accent)]">編輯</span>
@@ -1257,13 +1230,13 @@ export default function AdminClient() {
   };
 
   const deleteAllCards = async () => {
-    if (cards.length === 0) return;
+    if (cards.length === 0 && categories.length === 0) return;
 
     const answer = window.prompt(
-      `這會永久刪除 ${cards.length} 張字卡，無法復原。請輸入「全部刪除」確認。`
+      `這會永久刪除 ${cards.length} 張字卡與 ${categories.length} 個分類，無法復原。請輸入「全部字卡與分類刪除」確認。`
     );
 
-    if (answer !== "全部刪除") {
+    if (answer !== "全部字卡與分類刪除") {
       setMessage("已取消清空");
       return;
     }
@@ -1280,9 +1253,12 @@ export default function AdminClient() {
 
       if (!response.ok) throw new Error(await readApiError(response));
 
-      const result = (await response.json()) as { deleted: number };
+      const result = (await response.json()) as {
+        deletedCards: number;
+        deletedCategories: number;
+      };
       await loadCards(false);
-      setMessage(`已刪除 ${result.deleted} 張字卡`);
+      setMessage(`已刪除 ${result.deletedCards} 張字卡與 ${result.deletedCategories} 個分類`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "清空失敗");
     } finally {
@@ -1342,7 +1318,7 @@ export default function AdminClient() {
           <div>
             <h1 className="text-2xl font-extrabold">狼狼按鈕管理</h1>
             <p className="text-sm font-bold text-[var(--ink-soft)]">
-              {cards.length} 張字卡，包含 hidden cards
+              {cards.length} 張字卡，{categories.length} 個分類
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1352,10 +1328,10 @@ export default function AdminClient() {
             <button
               type="button"
               onClick={deleteAllCards}
-              disabled={isLoading || cards.length === 0}
+              disabled={isLoading || (cards.length === 0 && categories.length === 0)}
               className="danger-button disabled:opacity-50"
             >
-              全部刪除
+              全部字卡與分類刪除
             </button>
             <button type="button" onClick={leaveAdmin} className="secondary-button">
               離開管理模式
@@ -1371,6 +1347,7 @@ export default function AdminClient() {
         />
 
         <CategoryManager
+          cards={cards}
           categories={categories}
           onReloadCards={() => loadCards(false)}
           isBusy={isLoading}

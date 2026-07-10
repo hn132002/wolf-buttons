@@ -22,7 +22,6 @@ export async function GET(request: Request) {
     }
 
     const cards = await prisma.communicationCard.findMany({
-      where: includeHidden ? undefined : { isVisible: true },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     });
     const serializedCards = cards.map(serializeCard);
@@ -52,7 +51,9 @@ export async function POST(request: Request) {
     const categories = await prisma.communicationCategory.findMany({
       select: { key: true, name: true, emoji: true },
     });
-    const resolvedCategories = resolveCardCategoryKeys(parsed.data.categories, categories);
+    const resolvedCategories = resolveCardCategoryKeys(parsed.data.categories, categories, {
+      allowMissing: true,
+    });
 
     if (!resolvedCategories.ok) {
       return NextResponse.json(
@@ -61,19 +62,44 @@ export async function POST(request: Request) {
       );
     }
 
-    const card = await prisma.communicationCard.create({
-      data: {
-        emoji: parsed.data.emoji!,
-        label: parsed.data.label!,
-        labelJa: parsed.data.labelJa ?? null,
-        zh: parsed.data.zh!,
-        ja: parsed.data.ja!,
-        en: parsed.data.en ?? null,
-        note: parsed.data.note ?? null,
-        categories: resolvedCategories.categories,
-        sortOrder: parsed.data.sortOrder ?? 0,
-        isVisible: parsed.data.isVisible ?? true,
-      },
+    const card = await prisma.$transaction(async (tx) => {
+      const existingKeys = new Set(categories.map((category) => category.key));
+      const missingKeys = resolvedCategories.categories.filter(
+        (category) => !existingKeys.has(category)
+      );
+
+      if (missingKeys.length > 0) {
+        const lastCategory = await tx.communicationCategory.findFirst({
+          orderBy: { sortOrder: "desc" },
+          select: { sortOrder: true },
+        });
+
+        await tx.communicationCategory.createMany({
+          data: missingKeys.map((key, index) => ({
+            key,
+            name: key,
+            emoji: null,
+            sortOrder: (lastCategory?.sortOrder ?? -1) + index + 1,
+            isVisible: true,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return tx.communicationCard.create({
+        data: {
+          emoji: parsed.data.emoji ?? "",
+          label: parsed.data.label ?? "",
+          labelJa: parsed.data.labelJa ?? null,
+          zh: parsed.data.zh ?? "",
+          ja: parsed.data.ja ?? "",
+          en: parsed.data.en ?? null,
+          note: parsed.data.note ?? null,
+          categories: resolvedCategories.categories,
+          sortOrder: parsed.data.sortOrder ?? 0,
+          isVisible: true,
+        },
+      });
     });
 
     return NextResponse.json(serializeCard(card), { status: 201 });
@@ -97,11 +123,18 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "清空確認失敗" }, { status: 400 });
     }
 
-    const result = await prisma.communicationCard.deleteMany();
+    const result = await prisma.$transaction(async (tx) => {
+      const [cards, categories] = await Promise.all([
+        tx.communicationCard.deleteMany(),
+        tx.communicationCategory.deleteMany(),
+      ]);
 
-    return NextResponse.json({ deleted: result.count });
+      return { deletedCards: cards.count, deletedCategories: categories.count };
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("清空字卡失敗:", error);
-    return NextResponse.json({ error: "清空字卡失敗" }, { status: 500 });
+    console.error("清空字卡與分類失敗:", error);
+    return NextResponse.json({ error: "清空字卡與分類失敗" }, { status: 500 });
   }
 }

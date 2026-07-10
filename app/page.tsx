@@ -1,5 +1,5 @@
 import WolfButtonsClient from "@/app/WolfButtonsClient";
-import { projectStoredCardCategories, serializeCard, sortCards } from "@/lib/cards";
+import { projectPublicCardCategories, serializeCard, sortCards } from "@/lib/cards";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,6 @@ const getInitialData = async () => {
   try {
     const [cards, categories] = await Promise.all([
       prisma.communicationCard.findMany({
-        where: { isVisible: true },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       }),
       prisma.communicationCategory.findMany({
@@ -19,7 +18,7 @@ const getInitialData = async () => {
 
     return {
       cards: serializedCards,
-      categories: projectStoredCardCategories(categories, serializedCards),
+      categories: projectPublicCardCategories(categories, serializedCards),
     };
   } catch (error) {
     console.error("讀取字卡初始資料失敗:", error);
